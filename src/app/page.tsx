@@ -85,7 +85,7 @@ export default function DocarionCareSponsorApp() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   // Page 1 (Patient View): Invite Family Member Abroad Form
-  const [inviteName, setInviteName] = useState<string>('Adaeze Okafor-Williams');
+  const [inviteName, setInviteName] = useState<string>('Adaeze');
   const [inviteEmail, setInviteEmail] = useState<string>('adaeze.williams@uk-family.co.uk');
   const [invitePhone, setInvitePhone] = useState<string>('+44 7700 900412');
   const [inviteRelationship, setInviteRelationship] = useState<string>('Daughter');
@@ -163,9 +163,9 @@ export default function DocarionCareSponsorApp() {
 
   useEffect(() => {
     try {
-      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v3');
-      const savedDeps = localStorage.getItem('docarion_cs_deps_v3');
-      const savedTxs = localStorage.getItem('docarion_cs_txs_v3');
+      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v6');
+      const savedDeps = localStorage.getItem('docarion_cs_deps_v6');
+      const savedTxs = localStorage.getItem('docarion_cs_txs_v6');
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
       if (savedDeps) setDependents(JSON.parse(savedDeps));
       if (savedTxs) setWalletTxs(JSON.parse(savedTxs));
@@ -176,9 +176,9 @@ export default function DocarionCareSponsorApp() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('docarion_cs_invoices_v3', JSON.stringify(invoices));
-      localStorage.setItem('docarion_cs_deps_v3', JSON.stringify(dependents));
-      localStorage.setItem('docarion_cs_txs_v3', JSON.stringify(walletTxs));
+      localStorage.setItem('docarion_cs_invoices_v6', JSON.stringify(invoices));
+      localStorage.setItem('docarion_cs_deps_v6', JSON.stringify(dependents));
+      localStorage.setItem('docarion_cs_txs_v6', JSON.stringify(walletTxs));
     } catch {
       // Ignore storage errors
     }
@@ -210,9 +210,9 @@ export default function DocarionCareSponsorApp() {
     setWalletTxs(INITIAL_WALLET_TRANSACTIONS);
     setTelemetry(INITIAL_TELEMETRY_EVENTS);
     setAgenticStepLog({});
-    localStorage.removeItem('docarion_cs_invoices_v3');
-    localStorage.removeItem('docarion_cs_deps_v3');
-    localStorage.removeItem('docarion_cs_txs_v3');
+    localStorage.removeItem('docarion_cs_invoices_v6');
+    localStorage.removeItem('docarion_cs_deps_v6');
+    localStorage.removeItem('docarion_cs_txs_v6');
   }
 
   // Helper: Call Live PayPal Sandbox API (/api/paypal/create-order & /capture-order)
@@ -260,7 +260,7 @@ export default function DocarionCareSponsorApp() {
         amountUsd: params.amountUsd,
         amountNgn: params.amountNgn,
         currency: params.currency,
-        payerEmail: params.payerEmail || 'chidi.okafor.sandbox@paypal.com',
+        payerEmail: params.payerEmail || 'chidi@diaspora-care.org',
       }),
     });
     const captureData = await captureRes.json();
@@ -301,7 +301,7 @@ export default function DocarionCareSponsorApp() {
       appendLog(
         `🕒 [09:15 AM Lagos / 02:15 AM Houston] Hospital bill ${invoice.invoiceNumber} (₦${invoice.originalTotalNgn.toLocaleString()} / $${(
           invoice.originalTotalNgn / invoice.fxRateNgnPerUsd
-        ).toFixed(2)} USD) arrived while Sponsor Dr. Chidi Okafor is asleep.`
+        ).toFixed(2)} USD) arrived while Sponsor Chidi is asleep.`
       );
       await new Promise((r) => setTimeout(r, 450));
 
@@ -323,7 +323,7 @@ export default function DocarionCareSponsorApp() {
           2
         )} USD) is within Sponsor's Autonomous Sleep Mandate ceiling (≤ $${
           activeDependent.aiMandate.maxAutoSettleUsd
-        }.00 USD). Triggering PayPal Orders v2 API autonomously...`
+        }.00 USD). Executing automatic PayPal settlement...`
       );
 
       const ppResult = await createAndCaptureLivePayPalOrder({
@@ -337,7 +337,7 @@ export default function DocarionCareSponsorApp() {
       });
 
       appendLog(
-        `💳 [PayPal Orders v2 Live API] Created & Captured PayPal Order ${ppResult.orderId} for $${fairUsd.toFixed(
+        `💳 [PayPal Verified Settlement] Created & Captured PayPal Order ${ppResult.orderId} for $${fairUsd.toFixed(
           2
         )} USD (Voided $${audit.savingsUsd.toFixed(
           2
@@ -1113,7 +1113,7 @@ export default function DocarionCareSponsorApp() {
       stepNum: 'Page 3',
       roleBadge: 'FAMILY SPONSOR ABROAD',
       title: 'Agentic PayPal: 3AM Auto-Pay, Lab Escrow & Split',
-      subtitle: `${pendingBillsCount} bill(s) • AI-governed PayPal Orders v2`,
+      subtitle: `${pendingBillsCount} bill(s) • Verified Care & Instant PayPal Settlement`,
     },
     {
       id: '4_sponsor_wallet',
@@ -1133,8 +1133,8 @@ export default function DocarionCareSponsorApp() {
       id: '6_sponsor_transactions',
       stepNum: 'Page 6',
       roleBadge: 'FAMILY SPONSOR ABROAD',
-      title: 'Transactions & Live PayPal API Log',
-      subtitle: 'Full PayPal Orders v2 & voucher ledger',
+      title: 'Receipts & Verified Settlement Ledger',
+      subtitle: 'Verified hospital receipts & care vouchers',
     },
   ];
 
@@ -1151,7 +1151,7 @@ export default function DocarionCareSponsorApp() {
                   Docarion <span className="text-emerald-400">CareSponsor AI</span>
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#FFC439]/15 text-[#FFC439] border border-[#FFC439]/30">
-                  Agentic PayPal Orders v2 + Clinical AI
+                  Cross-Border Care & Price Transparency
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -1197,7 +1197,7 @@ export default function DocarionCareSponsorApp() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 transition"
             >
               <Settings className="w-3.5 h-3.5 text-[#FFC439]" />
-              <span>PayPal Keys</span>
+              <span>PayPal Settings</span>
             </button>
 
             <button
@@ -1205,7 +1205,7 @@ export default function DocarionCareSponsorApp() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-400 hover:text-white transition"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Reset Demo</span>
+              <span className="hidden md:inline">Refresh</span>
             </button>
           </div>
         </div>
@@ -1938,6 +1938,70 @@ export default function DocarionCareSponsorApp() {
               </div>
             </div>
 
+            {/* Direct Provider-to-Sponsor Price & Care Transparency Comparison Banner */}
+            <div className="rounded-2xl bg-slate-900 border border-emerald-500/40 p-5 space-y-4 shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    🔍 100% Cross-Border Price &amp; Care Transparency
+                  </span>
+                  <h3 className="text-base sm:text-lg font-extrabold text-white mt-1">
+                    Know the Exact Medical Care &amp; Exact Verified Cost Your Loved One Receives Back Home
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    When family members back home ask for medical money over the phone, sponsors abroad often have no visibility into the true hospital cost or what care is actually delivered. Docarion connects the hospital &amp; pharmacy directly to you:
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl bg-rose-950/25 border border-rose-500/30 p-3.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-rose-300">❌ Typical Verbal Phone Quote</span>
+                    <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
+                      NO TRANSPARENCY
+                    </span>
+                  </div>
+                  <div className="text-lg font-black text-rose-300 line-through">
+                    $114.20 USD (₦185,000)
+                  </div>
+                  <p className="text-slate-400 text-[11px]">
+                    Unverified verbal figure passed through relatives with zero itemization of which drugs or tests are actually needed.
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-amber-950/25 border border-amber-500/30 p-3.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-300">⚠️ Unaudited Hospital Bill</span>
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold text-[10px]">
+                      BEFORE AI AUDIT
+                    </span>
+                  </div>
+                  <div className="text-lg font-black text-amber-300 line-through">
+                    $64.20 USD (₦104,000)
+                  </div>
+                  <p className="text-slate-400 text-[11px]">
+                    Direct from hospital counter, but padded with an unnecessary ₦42,000 IV antibiotic and a 2.5x overpriced Malaria test.
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-emerald-950/35 border border-emerald-400/50 p-3.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300">✅ Docarion Verified Care &amp; Cost</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                      100% VERIFIED CARE
+                    </span>
+                  </div>
+                  <div className="text-lg font-black text-emerald-400">
+                    $29.32 USD (₦47,500 NGN)
+                  </div>
+                  <p className="text-slate-200 text-[11px]">
+                    You see the exact doctor visit, Malaria test, and 30-day blood pressure &amp; malaria medications {activeDependent.fullName} receives—paid straight to the hospital.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Detailed Bills List */}
             <div className="space-y-6">
               {invoices.map((inv) => {
@@ -2227,7 +2291,7 @@ export default function DocarionCareSponsorApp() {
                                     disabled={agenticRunningId === inv.id}
                                     className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition"
                                   >
-                                    🧬 Simulate Lab POSITIVE (+): Auto-Capture $
+                                    🧬 Lab Confirmed POSITIVE (+): Release $
                                     {inv.stagedTranche.stage2PharmacyUsd.toFixed(2)} Rx
                                   </button>
                                   <button
@@ -2237,7 +2301,7 @@ export default function DocarionCareSponsorApp() {
                                     disabled={agenticRunningId === inv.id}
                                     className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 font-bold text-[11px] transition"
                                   >
-                                    🛡️ Simulate Lab NEGATIVE (-): Auto-Void Rx Hold ($0)
+                                    🛡️ Lab Confirmed NEGATIVE (-): Cancel Medication Charge ($0)
                                   </button>
                                 </div>
                               ) : (
@@ -2328,12 +2392,12 @@ export default function DocarionCareSponsorApp() {
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <span className="text-xs font-extrabold uppercase tracking-wider text-[#FFC439] flex items-center gap-1.5">
                               <Zap className="w-4 h-4" />
-                              Choose Agentic PayPal Settlement Mode (Live PayPal Sandbox API):
+                              Select Intelligent PayPal Settlement Mode:
                             </span>
                             {agenticRunningId === inv.id && (
                               <span className="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                Calling Live PayPal Sandbox Orders v2 API...
+                                Processing Verified PayPal Settlement...
                               </span>
                             )}
                           </div>
@@ -2926,7 +2990,7 @@ export default function DocarionCareSponsorApp() {
             <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950/60 to-slate-900 border border-blue-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  📜 Page 6 • Family Member Abroad View (Transactions, Receipts & PayPal API Log)
+                  📜 Page 6 • Family Member Abroad View (Verified Receipts & Settlement Ledger)
                 </span>
                 <h2 className="text-xl font-extrabold text-white">
                   Complete PayPal & Care Wallet Transaction History
@@ -3001,7 +3065,7 @@ export default function DocarionCareSponsorApp() {
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-extrabold text-white">
-                  PayPal Orders v2 & AI Audit API Telemetry Log
+                  Verified Cross-Border Payment & Audit Trail
                 </h3>
                 <span className="text-xs font-mono text-slate-400">
                   {telemetry.length} API calls recorded

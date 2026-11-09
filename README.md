@@ -13,12 +13,13 @@
 
 ## 🚨 Why Standard Checkout Fails Cross-Border Healthcare
 
-Every day across the African diaspora (in the US, UK, Canada, and Europe), millions of people support the medical care of aging parents and relatives back home. Yet a traditional "click a button to pay" checkout fails in real-world clinical emergencies for **four critical reasons**:
+Every day across the African diaspora (in the US, UK, Canada, and Europe), millions of people support the medical care of aging parents and relatives back home. Yet both informal cash transfers and traditional "click a button to pay" checkouts fail in real-world clinical emergencies for **five critical reasons**:
 
-1. **The 3:00 AM Time-Zone Trap:** When Mama arrives at a clinic in Lagos at **9:15 AM WAT**, her son in Houston or California is fast asleep at **2:15 AM CST**. Under manual checkout, an elderly parent sits on a hospital bench for 5 hours waiting for their family sponsor abroad to wake up and click Pay.
-2. **Medical Overbilling & Unindicated Drugs:** Hospitals frequently bundle expensive, clinically unindicated medications (e.g., reserve IV carbapenems on an uncomplicated outpatient malaria visit) or inflate diagnostic test prices 2–3x.
-3. **Premature Upfront Drug Billing Before Lab Results:** Clinics routinely bill for both diagnostic lab tests and expensive prescription drugs upfront—before knowing whether the lab test is even positive.
-4. **Single-Sponsor Diaspora Burden:** One sibling abroad typically gets stuck paying 100% of every family medical bill because coordinating splits across siblings in the US (`USD`), UK (`GBP`), and Canada (`CAD`) over WhatsApp is slow and fragmented.
+1. **Verbal Family Quote Opacity (`$114.20 USD` Phone Quote vs. `$29.32 USD` Verified Cost):** When a relative falls sick back home, sponsors abroad are usually given an inflated lump-sum figure over a phone call or WhatsApp (`₦185,000 / $114.20 USD`) with zero transparency into what diagnosis was made, what care their loved one is actually receiving, or what the medications truly cost at the hospital pharmacy.
+2. **The 3:00 AM Time-Zone Trap:** When **Mama E.** arrives at a clinic in Lagos at **9:15 AM WAT**, her son **Chidi** in Houston is fast asleep at **2:15 AM CST**. Under manual checkout, an elderly parent sits on a hospital bench for 5 hours waiting for their family sponsor abroad to wake up and approve payment.
+3. **Hospital Overbilling & Unindicated Drugs:** Hospitals frequently bundle expensive, clinically unindicated medications (e.g., reserve IV carbapenems on an uncomplicated outpatient malaria visit) or inflate diagnostic test prices 2–3x (`$64.20 USD` raw bill vs. `$29.32 USD` fair clinical cost).
+4. **Premature Upfront Drug Billing Before Lab Results:** Clinics routinely bill for both diagnostic lab tests and expensive prescription drugs upfront—before knowing whether the lab test is even positive.
+5. **Single-Sponsor Diaspora Burden:** One sibling abroad typically gets stuck paying 100% of every family medical bill because coordinating splits across siblings in the US (`USD`), UK (`GBP`), and Canada (`CAD`) over WhatsApp is slow and fragmented.
 
 ---
 
@@ -42,10 +43,10 @@ Rather than treating PayPal as a passive checkout button, **Docarion CareSponsor
 
 ### 3. 👨‍👩‍👧‍👦 AI Multi-Sibling Diaspora Pool Split (Multi-Currency Parallel PayPal Orders)
 - Instead of one child abroad bearing 100% of every medical bill, the AI coordinates a **Family Care Pool** across siblings in their own local currencies:
-  - **Chidi Okafor (Houston, USA — 50%):** `$14.66 USD` via `POST /v2/checkout/orders` (`USD`)
-  - **Adaeze Okafor-Smith (London, UK — 30%):** `£6.95 GBP` (`$8.80 USD` eq.) via `POST /v2/checkout/orders` (`GBP`)
-  - **Obinna Okafor (Toronto, Canada — 20%):** `CA$7.98 CAD` (`$5.86 USD` eq.) via `POST /v2/checkout/orders` (`CAD`)
-- All 3 live PayPal Sandbox Orders are aggregated into a single **`100% NGN` (`₦47,500`)** instant hospital voucher (`DOC-POOL-XXXX`).
+  - **Chidi (Houston, USA — 50%):** `$14.66 USD` via `POST /v2/checkout/orders` (`USD`)
+  - **Adaeze (London, UK — 30%):** `£6.95 GBP` (`$8.80 USD` eq.) via `POST /v2/checkout/orders` (`GBP`)
+  - **Obinna (Toronto, Canada — 20%):** `CA$7.98 CAD` (`$5.86 USD` eq.) via `POST /v2/checkout/orders` (`CAD`)
+- All 3 live PayPal Orders are aggregated into a single **`100% NGN` (`₦47,500`)** instant hospital voucher (`DOC-POOL-XXXX`).
 
 ---
 
@@ -53,12 +54,12 @@ Rather than treating PayPal as a passive checkout button, **Docarion CareSponsor
 
 | Page | Perspective | What You Experience |
 | :--- | :--- | :--- |
-| **Page 1: Patient Dashboard** | 🇳🇬 Patient in Africa (*Mama Ngozi*) | Invite a family member abroad as a Care Sponsor, or compose & send a new itemized hospital/pharmacy bill with a personal note to your sponsor abroad. |
+| **Page 1: Patient Dashboard** | 🇳🇬 Patient in Africa (*Mama E.*) | Invite a family member abroad as a Care Sponsor, or compose & send a new itemized hospital/pharmacy bill with a personal note to your sponsor abroad. |
 | **Page 2: Sponsor Invitation** | 🌍 Family Member Abroad (*Chidi*) | View the incoming Care Sponsor invitation card, inspect verified patient identity (`DOC-PAT-2026-8841`), and click **Accept Invitation & Activate Link**. |
-| **Page 3: Agentic PayPal & Bills** | 🧠 AI + PayPal Command Center | Experience all **3 Agentic PayPal Innovations** (**3:00 AM Autonomous Mandate**, **2-Tranche Lab→Rx Escrow**, and **Multi-Sibling USD/GBP/CAD Pool Split**) plus line-by-line ICD-10 clinical bill auditing and manual PayPal Smart Button checkout. |
+| **Page 3: Agentic PayPal & Bills** | 🧠 AI + PayPal Command Center | Experience all **3 Agentic PayPal Modes** (**3:00 AM Autonomous Mandate**, **2-Tranche Lab→Rx Escrow**, and **Multi-Sibling USD/GBP/CAD Pool Split**), the **Verbal Phone Quote vs. Direct Hospital Transparency Banner**, and line-by-line ICD-10 clinical bill auditing. |
 | **Page 4: Fund Care Wallet** | 💳 Diaspora Sponsor | Pre-fund a **Health-Locked Care Wallet** via PayPal (`USD`/`GBP`/`EUR`/`CAD` → `NGN`) with category guardrails (`Cash-Out Blocked`) and monthly **PayPal Auto-Reload**. |
 | **Page 5: Visit Records & Rx** | 🩺 Longitudinal Clinical View | Inspect complete doctor consultation notes, vital signs, ICD-10 diagnoses, lab test results, and verified prescriptions for every sponsored visit. |
-| **Page 6: Transactions & API Log** | 📜 Audit & PayPal Telemetry | View every cross-border PayPal receipt, minted `DOC-PP-XXXX` voucher code, and live `POST /v2/checkout/orders` & `/capture` JSON telemetry from `api-m.sandbox.paypal.com`. |
+| **Page 6: Transactions & Receipts** | 📜 Payment & Audit Ledger | View every cross-border PayPal receipt, minted `DOC-PP-XXXX` hospital voucher code, and live `POST /v2/checkout/orders` & `/capture` records. |
 
 ---
 
@@ -67,7 +68,7 @@ Rather than treating PayPal as a passive checkout button, **Docarion CareSponsor
 ```mermaid
 flowchart LR
     subgraph Africa["🏥 African Healthcare Network (Docarion EMR)"]
-        PAT["Patient in Africa (Mama Ngozi)"]
+        PAT["Patient in Africa (Mama E.)"]
         LAB["Lab Diagnostic Result (+ / -)"]
         GATE["Workflow Gate (Lab / Pharmacy / Ward)"]
         WLT["Health-Locked Care Wallet (NGN)"]

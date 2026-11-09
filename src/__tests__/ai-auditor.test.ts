@@ -3,7 +3,7 @@ import { runDeterministicClinicalBillAudit } from '../lib/ai-auditor';
 import { INITIAL_INVOICES } from '../lib/initial-data';
 
 describe('Docarion CareSponsor AI — Clinical & Fair-Price Bill Auditor', () => {
-  it('flags overpriced malaria lab RDT and unindicated IV Meropenem on Mama Ngozi invoice (DOC-INV-2026-9041)', () => {
+  it('flags overpriced malaria lab RDT and unindicated IV Meropenem on Mama E. invoice (DOC-INV-2026-9041)', () => {
     const mamaInvoice = INITIAL_INVOICES[0];
     const report = runDeterministicClinicalBillAudit(mamaInvoice);
 
