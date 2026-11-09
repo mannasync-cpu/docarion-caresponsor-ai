@@ -3,8 +3,11 @@
 **Autonomous Agentic PayPal + Clinical AI Engine for Cross-Border Diaspora Healthcare Sponsorship, ICD-10 Medical Bill Auditing, Staged Lab-to-Rx Escrow & Multi-Sibling Pool Settlement**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](./LICENSE)
+[![Live Production Demo](https://img.shields.io/badge/Live_Demo-docarion.com%2Fcare--sponsor-10B981.svg)](https://docarion.com/care-sponsor)
 [![PayPal Integration](https://img.shields.io/badge/PayPal-Agentic_Orders_v2_%2B_Staged_Escrow-003087.svg)](https://developer.paypal.com)
 [![AI Engine](https://img.shields.io/badge/AI-Gemini_2.5_Flash_%2B_ICD10_Clinical_Auditor-purple.svg)](#architecture)
+
+> 🌐 **Live Production Experience (No Login Required for Judges):** **[https://docarion.com/care-sponsor](https://docarion.com/care-sponsor)** *(Integrated directly into the [Docarion Platform](https://docarion.com))*
 
 ---
 
@@ -103,7 +106,7 @@ flowchart LR
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone <your-public-repo-url>
+git clone https://github.com/mannasync-cpu/docarion-caresponsor-ai.git
 cd docarion-caresponsor-ai
 npm install
 ```
