@@ -22,6 +22,42 @@ export interface SpendingGuardrails {
   blockCashWithdrawal: true;
 }
 
+export interface AutonomousPayPalMandate {
+  enabledWhileSleeping: boolean;
+  maxAutoSettleUsd: number;
+  minAiTrustScoreRequired: number;
+  autoStripOverbilledItems: boolean;
+  stagedLabProofEscrowEnabled: boolean;
+  multiSiblingSplitEnabled: boolean;
+}
+
+export interface StagedTrancheState {
+  active: boolean;
+  stage1LabConsultNgn: number;
+  stage1LabConsultUsd: number;
+  stage1Status: 'pending' | 'captured_unlocked';
+  stage1PayPalOrderId?: string;
+  stage2PharmacyNgn: number;
+  stage2PharmacyUsd: number;
+  stage2Status: 'awaiting_lab_result' | 'captured_positive_lab' | 'voided_negative_lab';
+  stage2PayPalOrderId?: string;
+  labProofNote?: string;
+}
+
+export interface SiblingSplitShare {
+  sponsorId: string;
+  sponsorName: string;
+  relationship: string;
+  location: string;
+  currency: DiasporaCurrency;
+  percentage: number;
+  shareUsd: number;
+  shareLocalCurrencyAmount: number;
+  shareNgn: number;
+  status: 'pending' | 'captured';
+  paypalOrderId?: string;
+}
+
 export interface AutoReloadSubscription {
   active: boolean;
   subscriptionId: string;
@@ -40,6 +76,7 @@ export interface CareSponsor {
   relationship: string;
   diasporaLocation: string;
   preferredCurrency: DiasporaCurrency;
+  splitSharePercent: number;
   paypalPayerEmail: string;
   invitationStatus: 'pending_acceptance' | 'accepted_active';
   permissions: {
@@ -77,7 +114,10 @@ export interface PatientVisitRecord {
     medicationName: string;
     dosageInstruction: string;
     duration: string;
-    dispenseStatus: 'Dispensed (Paid via Sponsor)' | 'Ready at Pharmacy (Awaiting Sponsor Payment)';
+    dispenseStatus:
+      | 'Dispensed (Paid via Sponsor)'
+      | 'Ready at Pharmacy (Awaiting Sponsor Payment)'
+      | 'Auto-Voided (Lab Result Negative)';
   }[];
   labResultsSummary: {
     testName: string;
@@ -103,6 +143,7 @@ export interface CareDependent {
   healthLockedWalletNgn: number;
   healthLockedWalletUsdEquivalent: number;
   guardrails: SpendingGuardrails;
+  aiMandate: AutonomousPayPalMandate;
   autoReloadPlan: AutoReloadSubscription;
   sponsors: CareSponsor[];
 }
@@ -162,7 +203,7 @@ export interface MedicalBillInvoice {
   diagnosisTitle: string;
   clinicalNotes: string;
   workflowGate: WorkflowGateType;
-  gateStatus: 'locked_awaiting_sponsor' | 'unlocked_paid' | 'emergency_bypassed';
+  gateStatus: 'locked_awaiting_sponsor' | 'unlocked_paid' | 'emergency_bypassed' | 'stage1_lab_unlocked';
   isEmergencyTriage?: boolean;
   sentToSponsor: boolean;
   sentToSponsorName?: string;
@@ -173,9 +214,17 @@ export interface MedicalBillInvoice {
   appliedAiFairAdjustment: boolean;
   fxRateNgnPerUsd: number;
   payableUsd: number;
-  status: 'pending_audit' | 'audited_ready' | 'paid_settled';
+  status: 'pending_audit' | 'audited_ready' | 'staged_escrow_in_progress' | 'paid_settled';
   createdAt: string;
   aiAuditReport?: AIAuditReport;
+  stagedTranche?: StagedTrancheState;
+  siblingSplitShares?: SiblingSplitShare[];
+  settledViaMode?:
+    | 'manual_paypal'
+    | 'autonomous_3am_ai_mandate'
+    | 'staged_clinical_proof_escrow'
+    | 'multi_sibling_pool_split'
+    | 'health_locked_wallet';
   paypalOrderId?: string;
   paypalCaptureId?: string;
   paypalPayerEmail?: string;
@@ -188,7 +237,14 @@ export interface WalletTransaction {
   id: string;
   dependentId: string;
   dependentName: string;
-  type: 'paypal_topup' | 'paypal_auto_reload' | 'bill_settlement_debit' | 'paypal_direct_bill';
+  type:
+    | 'paypal_topup'
+    | 'paypal_auto_reload'
+    | 'bill_settlement_debit'
+    | 'paypal_direct_bill'
+    | 'ai_autonomous_mandate'
+    | 'staged_clinical_escrow'
+    | 'multi_sibling_split';
   amountUsd: number;
   amountNgn: number;
   paypalReferenceId: string;

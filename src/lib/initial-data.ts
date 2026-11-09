@@ -38,6 +38,14 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
       inpatientAndEmergencyAdmissions: true,
       blockCashWithdrawal: true,
     },
+    aiMandate: {
+      enabledWhileSleeping: true,
+      maxAutoSettleUsd: 60,
+      minAiTrustScoreRequired: 90,
+      autoStripOverbilledItems: true,
+      stagedLabProofEscrowEnabled: true,
+      multiSiblingSplitEnabled: true,
+    },
     autoReloadPlan: {
       active: true,
       subscriptionId: 'I-PAYPAL-SUB-992841',
@@ -56,6 +64,7 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
         relationship: 'Son (Primary Sponsor)',
         diasporaLocation: 'Houston, TX, USA',
         preferredCurrency: 'USD',
+        splitSharePercent: 50,
         paypalPayerEmail: 'chidi.okafor.sandbox@paypal.com',
         invitationStatus: 'accepted_active',
         permissions: {
@@ -76,6 +85,7 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
         relationship: 'Daughter (Co-Sponsor)',
         diasporaLocation: 'London, United Kingdom',
         preferredCurrency: 'GBP',
+        splitSharePercent: 30,
         paypalPayerEmail: 'adaeze.williams.sandbox@paypal.com',
         invitationStatus: 'pending_acceptance',
         permissions: {
@@ -84,6 +94,27 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
           autoReceiveBills: true,
         },
         addedAt: '2026-11-08',
+        isPrimaryGuarantor: false,
+      },
+      {
+        id: 'spon-3',
+        inviteToken: 'INV-OBINNA-4410',
+        fullName: 'Engr. Obinna Okafor',
+        email: 'obinna.okafor@toronto-care.ca',
+        phoneOrWhatsapp: '+1 (416) 555-0821',
+        relationship: 'Son (Co-Sponsor)',
+        diasporaLocation: 'Toronto, ON, Canada',
+        preferredCurrency: 'CAD',
+        splitSharePercent: 20,
+        paypalPayerEmail: 'obinna.okafor.sandbox@paypal.com',
+        invitationStatus: 'accepted_active',
+        permissions: {
+          viewVisitRecordsAndPrescriptions: true,
+          fundCareWallet: true,
+          autoReceiveBills: true,
+        },
+        addedAt: '2026-10-18',
+        acceptedAt: '2026-10-19',
         isPrimaryGuarantor: false,
       },
     ],
@@ -110,6 +141,14 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
       inpatientAndEmergencyAdmissions: true,
       blockCashWithdrawal: true,
     },
+    aiMandate: {
+      enabledWhileSleeping: true,
+      maxAutoSettleUsd: 60,
+      minAiTrustScoreRequired: 90,
+      autoStripOverbilledItems: true,
+      stagedLabProofEscrowEnabled: true,
+      multiSiblingSplitEnabled: true,
+    },
     autoReloadPlan: {
       active: false,
       subscriptionId: 'NONE',
@@ -128,6 +167,7 @@ export const INITIAL_DEPENDENTS: CareDependent[] = [
         relationship: 'Son (Primary Sponsor)',
         diasporaLocation: 'Houston, TX, USA',
         preferredCurrency: 'USD',
+        splitSharePercent: 100,
         paypalPayerEmail: 'chidi.okafor.sandbox@paypal.com',
         invitationStatus: 'accepted_active',
         permissions: {
@@ -149,7 +189,7 @@ export const INITIAL_VISIT_RECORDS: PatientVisitRecord[] = [
     visitNumber: 'DOC-ENC-2026-4410',
     dependentId: 'dep-mama-ngozi',
     dependentName: 'Mama Ngozi Okafor',
-    visitDate: 'November 9, 2026 • 11:30 AM WAT',
+    visitDate: 'November 9, 2026 • 09:15 AM WAT (02:15 AM CST Houston)',
     facilityName: 'Lagos Lagoon Specialist Hospital & Pharmacy',
     facilityCity: 'Lekki, Lagos',
     department: 'Internal Medicine & Outpatient Pharmacy',
@@ -165,7 +205,7 @@ export const INITIAL_VISIT_RECORDS: PatientVisitRecord[] = [
       weight: '71.4 kg',
     },
     clinicalSummaryPlainEnglish:
-      'Mama Ngozi visited Lagos Lagoon Specialist Hospital today after feeling feverish for two days. Her malaria test came back positive for uncomplicated malaria, and her blood pressure is slightly elevated at 146/88 mmHg. She does NOT need hospital admission—a standard 3-day oral Coartem course plus her 30-day blood pressure refill will have her feeling much better within 48 hours.',
+      'Mama Ngozi visited Lagos Lagoon Specialist Hospital this morning at 9:15 AM Lagos time (2:15 AM Houston time while you were asleep). Her malaria test came back positive for uncomplicated malaria, and her blood pressure is slightly elevated at 146/88 mmHg. Standard 3-day oral Coartem ACT plus her 30-day blood pressure refill are indicated.',
     prescriptionsIssued: [
       {
         medicationName: 'Artemether 80mg / Lumefantrine 480mg (Coartem ACT)',
@@ -243,44 +283,6 @@ export const INITIAL_VISIT_RECORDS: PatientVisitRecord[] = [
     ],
     linkedInvoiceNumber: 'DOC-INV-2026-9048',
   },
-  {
-    id: 'vis-2026-081',
-    visitNumber: 'DOC-ENC-2026-3890',
-    dependentId: 'dep-mama-ngozi',
-    dependentName: 'Mama Ngozi Okafor',
-    visitDate: 'October 12, 2026 • 09:45 AM WAT',
-    facilityName: 'Lagos Lagoon Specialist Hospital & Pharmacy',
-    facilityCity: 'Lekki, Lagos',
-    department: 'Endocrinology & Diabetes Clinic',
-    attendingDoctor: 'Dr. Ibrahim Musa (Consultant Endocrinologist)',
-    chiefComplaint: 'Routine Diabetes HbA1c review & 30-day Metformin XR refill',
-    diagnosisTitle: 'Type 2 Diabetes Mellitus Without Complications',
-    icd10Code: 'E11.9',
-    vitals: {
-      bloodPressure: '136/82 mmHg',
-      heartRate: '74 bpm',
-      temperature: '36.7 °C',
-      bloodGlucose: '112 mg/dL',
-      weight: '71.8 kg',
-    },
-    clinicalSummaryPlainEnglish:
-      'Mama Ngozi had a great diabetes checkup in October. Her 3-month HbA1c came down to 6.7%, showing excellent blood sugar control. Her Metformin XR prescription was dispensed using her sponsored Care Wallet.',
-    prescriptionsIssued: [
-      {
-        medicationName: 'Metformin XR 1000mg',
-        dosageInstruction: '1 tablet twice daily with morning and evening meals',
-        duration: '30 Days (60 Tablets)',
-        dispenseStatus: 'Dispensed (Paid via Sponsor)',
-      },
-    ],
-    labResultsSummary: [
-      {
-        testName: 'Glycated Hemoglobin (HbA1c)',
-        resultValue: '6.7% (Target < 7.0% achieved)',
-        status: 'Normal',
-      },
-    ],
-  },
 ];
 
 export const INITIAL_INVOICES: MedicalBillInvoice[] = [
@@ -297,20 +299,20 @@ export const INITIAL_INVOICES: MedicalBillInvoice[] = [
     icd10Code: 'B50.9 / I10',
     diagnosisTitle: 'Acute Uncomplicated P. falciparum Malaria + Essential Hypertension Refill',
     clinicalNotes:
-      'Patient presented with 2-day history of low-grade fever (37.9°C), mild headache, and fatigue. RDT positive for P. falciparum; BP 146/88 mmHg. Stable outpatient management indicated with oral ACT + 30-day antihypertensive refill.',
+      'Patient presented at 9:15 AM Lagos time (2:15 AM Houston time) with 2-day history of low-grade fever (37.9°C), mild headache, and fatigue. RDT positive for P. falciparum; BP 146/88 mmHg. Stable outpatient management indicated with oral ACT + 30-day antihypertensive refill.',
     workflowGate: 'pharmacy_dispense_gate',
     gateStatus: 'locked_awaiting_sponsor',
     sentToSponsor: true,
     sentToSponsorName: 'Dr. Chidi Okafor (Houston, TX)',
     patientMessageToSponsor:
-      'Chidi my son, I saw Dr. Adeyemi at Lagos Lagoon Hospital today for fever and my monthly BP drugs. They sent the itemized bill to your Docarion Sponsor account.',
+      'Chidi my son, I saw Dr. Adeyemi at Lagos Lagoon Hospital this morning (9:15 AM Lagos / 2:15 AM your time) for fever and my monthly BP drugs. They sent the itemized bill to your Docarion Sponsor account.',
     originalTotalNgn: 104000,
     activePayableNgn: 104000,
     appliedAiFairAdjustment: false,
     fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
     payableUsd: 64.2,
     status: 'pending_audit',
-    createdAt: '2026-11-09T11:45:00Z',
+    createdAt: '2026-11-09T08:15:00Z',
     lineItems: [
       {
         id: 'li-1',
@@ -578,15 +580,15 @@ export const INITIAL_TELEMETRY_EVENTS: PayPalTelemetryEvent[] = [
     endpoint: 'GET /v1/docarion/care-circle/sync',
     method: 'GET',
     status: 200,
-    summary: 'Synced African Care Circle dependents, visit records, and itemized facility bills with PayPal Orders v2 gateway',
+    summary: 'Synced African Care Circle dependents, visit records, and Autonomous AI PayPal Mandates',
     requestPayload: {
       sponsorEmail: 'chidi.okafor@diaspora-care.org',
       network: 'docarion-central-emr',
     },
     responsePayload: {
       dependentsSynced: 2,
-      pendingInvoices: 2,
-      paypalEnvironment: 'sandbox',
+      pendingInvoices: 3,
+      paypalEnvironment: 'sandbox_live_api',
       fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
     },
   },

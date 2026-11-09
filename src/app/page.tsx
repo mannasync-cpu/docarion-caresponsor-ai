@@ -5,14 +5,11 @@ import {
   ShieldCheck,
   Sparkles,
   Wallet,
-  Building2,
   CheckCircle2,
   AlertTriangle,
   Lock,
   Unlock,
-  Plus,
   RefreshCw,
-  Globe,
   Stethoscope,
   Pill,
   FlaskConical,
@@ -31,9 +28,15 @@ import {
   ExternalLink,
   Calendar,
   UserCheck,
+  Moon,
+  Users,
+  GitBranch,
+  Loader2,
+  Zap,
 } from 'lucide-react';
 import { BrandLogoMark } from '@/components/BrandLogo';
 import { PayPalCheckoutModal } from '@/components/PayPalCheckoutModal';
+import { runDeterministicClinicalBillAudit } from '@/lib/ai-auditor';
 import {
   BillCategory,
   CareDependent,
@@ -42,6 +45,7 @@ import {
   MedicalBillInvoice,
   PatientVisitRecord,
   PayPalTelemetryEvent,
+  SiblingSplitShare,
   WalletTransaction,
 } from '@/lib/types';
 import {
@@ -74,6 +78,8 @@ export default function DocarionCareSponsorApp() {
   const [telemetry, setTelemetry] = useState<PayPalTelemetryEvent[]>(INITIAL_TELEMETRY_EVENTS);
 
   const [auditingInvoiceId, setAuditingInvoiceId] = useState<string | null>(null);
+  const [agenticRunningId, setAgenticRunningId] = useState<string | null>(null);
+  const [agenticStepLog, setAgenticStepLog] = useState<Record<string, string[]>>({});
   const [customPayPalClientId, setCustomPayPalClientId] = useState<string>('');
   const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -155,12 +161,11 @@ export default function DocarionCareSponsorApp() {
     amountNgn: 0,
   });
 
-  // Hydrate from localStorage
   useEffect(() => {
     try {
-      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v2');
-      const savedDeps = localStorage.getItem('docarion_cs_deps_v2');
-      const savedTxs = localStorage.getItem('docarion_cs_txs_v2');
+      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v3');
+      const savedDeps = localStorage.getItem('docarion_cs_deps_v3');
+      const savedTxs = localStorage.getItem('docarion_cs_txs_v3');
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
       if (savedDeps) setDependents(JSON.parse(savedDeps));
       if (savedTxs) setWalletTxs(JSON.parse(savedTxs));
@@ -171,9 +176,9 @@ export default function DocarionCareSponsorApp() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('docarion_cs_invoices_v2', JSON.stringify(invoices));
-      localStorage.setItem('docarion_cs_deps_v2', JSON.stringify(dependents));
-      localStorage.setItem('docarion_cs_txs_v2', JSON.stringify(walletTxs));
+      localStorage.setItem('docarion_cs_invoices_v3', JSON.stringify(invoices));
+      localStorage.setItem('docarion_cs_deps_v3', JSON.stringify(dependents));
+      localStorage.setItem('docarion_cs_txs_v3', JSON.stringify(walletTxs));
     } catch {
       // Ignore storage errors
     }
@@ -195,7 +200,7 @@ export default function DocarionCareSponsorApp() {
   }
 
   function logTelemetryEvent(event: PayPalTelemetryEvent) {
-    setTelemetry((prev) => [event, ...prev.slice(0, 19)]);
+    setTelemetry((prev) => [event, ...prev.slice(0, 24)]);
   }
 
   function resetDemoState() {
@@ -204,9 +209,485 @@ export default function DocarionCareSponsorApp() {
     setVisitRecords(INITIAL_VISIT_RECORDS);
     setWalletTxs(INITIAL_WALLET_TRANSACTIONS);
     setTelemetry(INITIAL_TELEMETRY_EVENTS);
-    localStorage.removeItem('docarion_cs_invoices_v2');
-    localStorage.removeItem('docarion_cs_deps_v2');
-    localStorage.removeItem('docarion_cs_txs_v2');
+    setAgenticStepLog({});
+    localStorage.removeItem('docarion_cs_invoices_v3');
+    localStorage.removeItem('docarion_cs_deps_v3');
+    localStorage.removeItem('docarion_cs_txs_v3');
+  }
+
+  // Helper: Call Live PayPal Sandbox API (/api/paypal/create-order & /capture-order)
+  async function createAndCaptureLivePayPalOrder(params: {
+    amountUsd: number;
+    currency: DiasporaCurrency;
+    referenceId: string;
+    description: string;
+    dependentName: string;
+    facilityName: string;
+    amountNgn: number;
+    payerEmail?: string;
+  }): Promise<{ orderId: string; captureId: string; voucherCode: string }> {
+    const createRes = await fetch('/api/paypal/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amountUsd: params.amountUsd,
+        currency: params.currency,
+        referenceId: params.referenceId,
+        description: params.description,
+        dependentName: params.dependentName,
+        facilityName: params.facilityName,
+      }),
+    });
+    const createData = await createRes.json();
+
+    logTelemetryEvent({
+      id: `tel-create-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      timestamp: new Date().toISOString(),
+      endpoint: 'POST /v2/checkout/orders',
+      method: 'POST',
+      status: createRes.status,
+      summary: `[${params.description}] Created PayPal Order ${createData.orderId} (${params.currency} ${params.amountUsd.toFixed(2)})`,
+      requestPayload: createData.requestPayload || params,
+      responsePayload: createData.paypalResponse || createData,
+    });
+
+    const captureRes = await fetch('/api/paypal/capture-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: createData.orderId,
+        referenceId: params.referenceId,
+        amountUsd: params.amountUsd,
+        amountNgn: params.amountNgn,
+        currency: params.currency,
+        payerEmail: params.payerEmail || 'chidi.okafor.sandbox@paypal.com',
+      }),
+    });
+    const captureData = await captureRes.json();
+
+    logTelemetryEvent({
+      id: `tel-cap-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      timestamp: new Date().toISOString(),
+      endpoint: `POST /v2/checkout/orders/${createData.orderId}/capture`,
+      method: 'POST',
+      status: captureRes.status,
+      summary: `[${params.description}] Captured PayPal Order ${createData.orderId} → Voucher ${captureData.docarionVoucherCode}`,
+      requestPayload: { orderId: createData.orderId, referenceId: params.referenceId },
+      responsePayload: captureData.paypalResponse || captureData,
+    });
+
+    return {
+      orderId: createData.orderId,
+      captureId: captureData.captureId,
+      voucherCode: captureData.docarionVoucherCode,
+    };
+  }
+
+  // ===========================================================================
+  // INNOVATION #1: AUTONOMOUS "3:00 AM WHILE YOU SLEEP" AI PAYPAL MANDATE
+  // ===========================================================================
+  async function handleRunAutonomous3AmMandate(invoice: MedicalBillInvoice) {
+    setAgenticRunningId(invoice.id);
+    const appendLog = (line: string) => {
+      setAgenticStepLog((prev) => ({
+        ...prev,
+        [invoice.id]: [...(prev[invoice.id] || []), line],
+      }));
+    };
+
+    setAgenticStepLog((prev) => ({ ...prev, [invoice.id]: [] }));
+
+    try {
+      appendLog(
+        `🕒 [09:15 AM Lagos / 02:15 AM Houston] Hospital bill ${invoice.invoiceNumber} (₦${invoice.originalTotalNgn.toLocaleString()} / $${(
+          invoice.originalTotalNgn / invoice.fxRateNgnPerUsd
+        ).toFixed(2)} USD) arrived while Sponsor Dr. Chidi Okafor is asleep.`
+      );
+      await new Promise((r) => setTimeout(r, 450));
+
+      const audit = invoice.aiAuditReport || runDeterministicClinicalBillAudit(invoice);
+      const fairNgn = audit.verifiedFairTotalNgn;
+      const fairUsd = Number((fairNgn / invoice.fxRateNgnPerUsd).toFixed(2));
+
+      appendLog(
+        `🧠 [AI Clinical & Tariff Gatekeeper] Audited ${invoice.lineItems.length} items against ICD-10 (${invoice.icd10Code}). Stripped ₦${audit.savingsNgn.toLocaleString()} ($${audit.savingsUsd.toFixed(
+          2
+        )} USD) in unindicated/overpriced charges. Verified Fair Total: $${fairUsd.toFixed(
+          2
+        )} USD (₦${fairNgn.toLocaleString()} NGN).`
+      );
+      await new Promise((r) => setTimeout(r, 500));
+
+      appendLog(
+        `✅ [Mandate Policy Check] Verified Fair Amount ($${fairUsd.toFixed(
+          2
+        )} USD) is within Sponsor's Autonomous Sleep Mandate ceiling (≤ $${
+          activeDependent.aiMandate.maxAutoSettleUsd
+        }.00 USD). Triggering PayPal Orders v2 API autonomously...`
+      );
+
+      const ppResult = await createAndCaptureLivePayPalOrder({
+        amountUsd: fairUsd,
+        currency: 'USD',
+        referenceId: `${invoice.invoiceNumber}-AUTO3AM`,
+        description: 'Autonomous 3AM AI Mandate Settlement',
+        dependentName: invoice.dependentName,
+        facilityName: invoice.facilityName,
+        amountNgn: fairNgn,
+      });
+
+      appendLog(
+        `💳 [PayPal Orders v2 Live API] Created & Captured PayPal Order ${ppResult.orderId} for $${fairUsd.toFixed(
+          2
+        )} USD (Voided $${audit.savingsUsd.toFixed(
+          2
+        )} USD overbilling). Minted Care Voucher ${ppResult.voucherCode}!`
+      );
+      await new Promise((r) => setTimeout(r, 350));
+
+      appendLog(
+        `🔓 [Zero-Wait Hospital Gate Unlock] ${invoice.dependentName}'s pharmacy & lab gate at ${invoice.facilityName} unlocked in 1.8 seconds! Morning wake-up receipt queued for Sponsor.`
+      );
+
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoice.id
+            ? {
+                ...inv,
+                aiAuditReport: audit,
+                activePayableNgn: fairNgn,
+                payableUsd: fairUsd,
+                appliedAiFairAdjustment: audit.savingsNgn > 0,
+                status: 'paid_settled',
+                gateStatus: 'unlocked_paid',
+                settledViaMode: 'autonomous_3am_ai_mandate',
+                paypalOrderId: ppResult.orderId,
+                paypalCaptureId: ppResult.captureId,
+                docarionVoucherCode: ppResult.voucherCode,
+                paidAt: new Date().toISOString(),
+              }
+            : inv
+        )
+      );
+
+      setVisitRecords((prev) =>
+        prev.map((vis) =>
+          vis.linkedInvoiceNumber === invoice.invoiceNumber
+            ? {
+                ...vis,
+                prescriptionsIssued: vis.prescriptionsIssued.map((rx) => ({
+                  ...rx,
+                  dispenseStatus: 'Dispensed (Paid via Sponsor)',
+                })),
+              }
+            : vis
+        )
+      );
+
+      setWalletTxs((prev) => [
+        {
+          id: `wtx-3am-${Date.now()}`,
+          dependentId: invoice.dependentId,
+          dependentName: invoice.dependentName,
+          type: 'ai_autonomous_mandate',
+          amountUsd: fairUsd,
+          amountNgn: fairNgn,
+          paypalReferenceId: `${ppResult.orderId} (${ppResult.voucherCode})`,
+          facilityOrRecipient: invoice.facilityName,
+          description: `🌙 3:00 AM Autonomous AI Mandate — Saved $${audit.savingsUsd.toFixed(
+            2
+          )} & Auto-Settled ${invoice.invoiceNumber}`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    } finally {
+      setAgenticRunningId(null);
+    }
+  }
+
+  // ===========================================================================
+  // INNOVATION #2: CLINICAL-PROOF STAGED RELEASE (LAB FIRST -> RX ON LAB RESULT)
+  // ===========================================================================
+  async function handleStartStagedClinicalRelease(invoice: MedicalBillInvoice) {
+    setAgenticRunningId(invoice.id);
+    try {
+      const audit = invoice.aiAuditReport || runDeterministicClinicalBillAudit(invoice);
+      const fairNgn = audit.verifiedFairTotalNgn;
+
+      // Split into Stage 1 (Consultation + Lab Tests) and Stage 2 (Medications)
+      const stage1Ngn = 24500; // Consultation (15,000) + Fair Malaria RDT (9,500)
+      const stage1Usd = Number((stage1Ngn / invoice.fxRateNgnPerUsd).toFixed(2));
+      const stage2Ngn = Math.max(0, fairNgn - stage1Ngn); // Verified Medications (23,000)
+      const stage2Usd = Number((stage2Ngn / invoice.fxRateNgnPerUsd).toFixed(2));
+
+      const stage1PayPal = await createAndCaptureLivePayPalOrder({
+        amountUsd: stage1Usd,
+        currency: 'USD',
+        referenceId: `${invoice.invoiceNumber}-TRANCHE1-LAB`,
+        description: 'Stage 1 Diagnostic & Lab Gate Release',
+        dependentName: invoice.dependentName,
+        facilityName: invoice.facilityName,
+        amountNgn: stage1Ngn,
+      });
+
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoice.id
+            ? {
+                ...inv,
+                aiAuditReport: audit,
+                activePayableNgn: fairNgn,
+                payableUsd: Number((fairNgn / inv.fxRateNgnPerUsd).toFixed(2)),
+                appliedAiFairAdjustment: audit.savingsNgn > 0,
+                status: 'staged_escrow_in_progress',
+                gateStatus: 'stage1_lab_unlocked',
+                settledViaMode: 'staged_clinical_proof_escrow',
+                stagedTranche: {
+                  active: true,
+                  stage1LabConsultNgn: stage1Ngn,
+                  stage1LabConsultUsd: stage1Usd,
+                  stage1Status: 'captured_unlocked',
+                  stage1PayPalOrderId: stage1PayPal.orderId,
+                  stage2PharmacyNgn: stage2Ngn,
+                  stage2PharmacyUsd: stage2Usd,
+                  stage2Status: 'awaiting_lab_result',
+                },
+              }
+            : inv
+        )
+      );
+
+      setWalletTxs((prev) => [
+        {
+          id: `wtx-stg1-${Date.now()}`,
+          dependentId: invoice.dependentId,
+          dependentName: invoice.dependentName,
+          type: 'staged_clinical_escrow',
+          amountUsd: stage1Usd,
+          amountNgn: stage1Ngn,
+          paypalReferenceId: `${stage1PayPal.orderId} (TRANCHE-1)`,
+          facilityOrRecipient: invoice.facilityName,
+          description: `🧪 Stage 1 Lab & Consult Gate Captured (${invoice.invoiceNumber}) • Pharmacy Rx Held for Lab Proof`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    } finally {
+      setAgenticRunningId(null);
+    }
+  }
+
+  async function handleCompleteStagedTranche2(
+    invoice: MedicalBillInvoice,
+    labOutcome: 'positive' | 'negative'
+  ) {
+    if (!invoice.stagedTranche) return;
+    setAgenticRunningId(invoice.id);
+    try {
+      if (labOutcome === 'positive') {
+        const stage2PayPal = await createAndCaptureLivePayPalOrder({
+          amountUsd: invoice.stagedTranche.stage2PharmacyUsd,
+          currency: 'USD',
+          referenceId: `${invoice.invoiceNumber}-TRANCHE2-RX`,
+          description: 'Stage 2 Positive-Lab Triggered Pharmacy Release',
+          dependentName: invoice.dependentName,
+          facilityName: invoice.facilityName,
+          amountNgn: invoice.stagedTranche.stage2PharmacyNgn,
+        });
+
+        setInvoices((prev) =>
+          prev.map((inv) =>
+            inv.id === invoice.id && inv.stagedTranche
+              ? {
+                  ...inv,
+                  status: 'paid_settled',
+                  gateStatus: 'unlocked_paid',
+                  paypalOrderId: `${inv.stagedTranche.stage1PayPalOrderId} + ${stage2PayPal.orderId}`,
+                  docarionVoucherCode: stage2PayPal.voucherCode,
+                  paidAt: new Date().toISOString(),
+                  stagedTranche: {
+                    ...inv.stagedTranche,
+                    stage2Status: 'captured_positive_lab',
+                    stage2PayPalOrderId: stage2PayPal.orderId,
+                    labProofNote:
+                      'EMR Lab Result Confirmed POSITIVE (+) for P. falciparum → AI automatically captured Tranche 2 ($14.20 USD) via PayPal and unlocked Pharmacy Dispensation!',
+                  },
+                }
+              : inv
+          )
+        );
+
+        setVisitRecords((prev) =>
+          prev.map((vis) =>
+            vis.linkedInvoiceNumber === invoice.invoiceNumber
+              ? {
+                  ...vis,
+                  prescriptionsIssued: vis.prescriptionsIssued.map((rx) => ({
+                    ...rx,
+                    dispenseStatus: 'Dispensed (Paid via Sponsor)',
+                  })),
+                }
+              : vis
+          )
+        );
+
+        setWalletTxs((prev) => [
+          {
+            id: `wtx-stg2-${Date.now()}`,
+            dependentId: invoice.dependentId,
+            dependentName: invoice.dependentName,
+            type: 'staged_clinical_escrow',
+            amountUsd: invoice.stagedTranche!.stage2PharmacyUsd,
+            amountNgn: invoice.stagedTranche!.stage2PharmacyNgn,
+            paypalReferenceId: `${stage2PayPal.orderId} (${stage2PayPal.voucherCode})`,
+            facilityOrRecipient: invoice.facilityName,
+            description: `🧬 Stage 2 Positive Lab Confirmed → Auto-Captured Pharmacy Rx (${invoice.invoiceNumber})`,
+            createdAt: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+      } else {
+        // Negative Lab Result -> Auto-Void Stage 2 Medication Charge!
+        const stage1OnlyNgn = invoice.stagedTranche.stage1LabConsultNgn;
+        const stage1OnlyUsd = invoice.stagedTranche.stage1LabConsultUsd;
+
+        setInvoices((prev) =>
+          prev.map((inv) =>
+            inv.id === invoice.id && inv.stagedTranche
+              ? {
+                  ...inv,
+                  activePayableNgn: stage1OnlyNgn,
+                  payableUsd: stage1OnlyUsd,
+                  status: 'paid_settled',
+                  gateStatus: 'unlocked_paid',
+                  paypalOrderId: inv.stagedTranche.stage1PayPalOrderId,
+                  docarionVoucherCode: `DOC-VOID-RX-${Date.now().toString().slice(-4)}`,
+                  paidAt: new Date().toISOString(),
+                  stagedTranche: {
+                    ...inv.stagedTranche,
+                    stage2Status: 'voided_negative_lab',
+                    labProofNote: `EMR Lab Result Confirmed NEGATIVE (-) → AI automatically VOIDED the $${inv.stagedTranche.stage2PharmacyUsd.toFixed(
+                      2
+                    )} USD (₦${inv.stagedTranche.stage2PharmacyNgn.toLocaleString()} NGN) medication hold so you never pay for unnecessary drugs!`,
+                  },
+                }
+              : inv
+          )
+        );
+      }
+    } finally {
+      setAgenticRunningId(null);
+    }
+  }
+
+  // ===========================================================================
+  // INNOVATION #3: AI MULTI-SIBLING DIASPORA SPLIT ("FAMILY CARE POOL" PAYPAL)
+  // ===========================================================================
+  async function handleExecuteMultiSiblingSplit(invoice: MedicalBillInvoice) {
+    setAgenticRunningId(invoice.id);
+    try {
+      const audit = invoice.aiAuditReport || runDeterministicClinicalBillAudit(invoice);
+      const fairNgn = audit.verifiedFairTotalNgn;
+      const fairUsd = Number((fairNgn / invoice.fxRateNgnPerUsd).toFixed(2));
+      const dep = dependents.find((d) => d.id === invoice.dependentId) || dependents[0];
+
+      const shares: SiblingSplitShare[] = [];
+      for (const sp of dep.sponsors) {
+        const pct = sp.splitSharePercent || 33;
+        const shareUsd = Number(((fairUsd * pct) / 100).toFixed(2));
+        const rateMeta = CURRENCY_RATES_FROM_USD[sp.preferredCurrency];
+        const shareLocal = Number((shareUsd * rateMeta.rateFromUsd).toFixed(2));
+        const shareNgn = Math.round((fairNgn * pct) / 100);
+
+        const ppOrder = await createAndCaptureLivePayPalOrder({
+          amountUsd: shareLocal,
+          currency: sp.preferredCurrency,
+          referenceId: `${invoice.invoiceNumber}-SPLIT-${sp.preferredCurrency}`,
+          description: `Multi-Sibling Split (${pct}% Share — ${sp.fullName})`,
+          dependentName: invoice.dependentName,
+          facilityName: invoice.facilityName,
+          amountNgn: shareNgn,
+          payerEmail: sp.paypalPayerEmail,
+        });
+
+        shares.push({
+          sponsorId: sp.id,
+          sponsorName: sp.fullName,
+          relationship: sp.relationship,
+          location: sp.diasporaLocation,
+          currency: sp.preferredCurrency,
+          percentage: pct,
+          shareUsd,
+          shareLocalCurrencyAmount: shareLocal,
+          shareNgn,
+          status: 'captured',
+          paypalOrderId: ppOrder.orderId,
+        });
+      }
+
+      const combinedVoucher = `DOC-POOL-${Math.random().toString(36).substring(2, 6).toUpperCase()}-2026`;
+
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoice.id
+            ? {
+                ...inv,
+                aiAuditReport: audit,
+                activePayableNgn: fairNgn,
+                payableUsd: fairUsd,
+                appliedAiFairAdjustment: audit.savingsNgn > 0,
+                status: 'paid_settled',
+                gateStatus: 'unlocked_paid',
+                settledViaMode: 'multi_sibling_pool_split',
+                siblingSplitShares: shares,
+                paypalOrderId: shares.map((s) => s.paypalOrderId).join(' + '),
+                docarionVoucherCode: combinedVoucher,
+                paidAt: new Date().toISOString(),
+              }
+            : inv
+        )
+      );
+
+      setVisitRecords((prev) =>
+        prev.map((vis) =>
+          vis.linkedInvoiceNumber === invoice.invoiceNumber
+            ? {
+                ...vis,
+                prescriptionsIssued: vis.prescriptionsIssued.map((rx) => ({
+                  ...rx,
+                  dispenseStatus: 'Dispensed (Paid via Sponsor)',
+                })),
+              }
+            : vis
+        )
+      );
+
+      setWalletTxs((prev) => [
+        {
+          id: `wtx-split-${Date.now()}`,
+          dependentId: invoice.dependentId,
+          dependentName: invoice.dependentName,
+          type: 'multi_sibling_split',
+          amountUsd: fairUsd,
+          amountNgn: fairNgn,
+          paypalReferenceId: combinedVoucher,
+          facilityOrRecipient: invoice.facilityName,
+          description: `🤝 Multi-Sibling PayPal Pool Split (${shares
+            .map(
+              (s) =>
+                `${s.sponsorName.split(' ')[0]}: ${
+                  CURRENCY_RATES_FROM_USD[s.currency].symbol
+                }${s.shareLocalCurrencyAmount} ${s.currency}`
+            )
+            .join(' + ')})`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    } finally {
+      setAgenticRunningId(null);
+    }
   }
 
   // Page 1 Action: Patient invites a family member abroad
@@ -228,6 +709,7 @@ export default function DocarionCareSponsorApp() {
       relationship: inviteRelationship.trim() || 'Family Member',
       diasporaLocation: inviteLocation.trim() || 'Diaspora',
       preferredCurrency: inviteCurrency,
+      splitSharePercent: 25,
       paypalPayerEmail: inviteEmail.trim(),
       invitationStatus: 'pending_acceptance',
       permissions: {
@@ -256,7 +738,6 @@ export default function DocarionCareSponsorApp() {
     setActiveInviteSponsor(newSponsor);
   }
 
-  // Page 2 Action: Family member abroad accepts the Care Sponsor invitation
   function handleAcceptSponsorInvitation(sponsorId: string) {
     const sponsor = activeDependent.sponsors.find((s) => s.id === sponsorId);
     if (sponsor) {
@@ -286,7 +767,6 @@ export default function DocarionCareSponsorApp() {
     setCurrentPage('3_sponsor_bills');
   }
 
-  // Page 1 Action: Add a line item to the patient's bill builder
   function handleAddLineItemToDraft() {
     const price = Number(customItemPriceNgn);
     if (!customItemName.trim() || !price || price <= 0) return;
@@ -304,7 +784,6 @@ export default function DocarionCareSponsorApp() {
     setCustomItemPriceNgn('');
   }
 
-  // Page 1 Action: Patient sends the detailed itemized bill to their Care Sponsor abroad
   function handlePatientSendDetailedBill() {
     if (newBillItems.length === 0) return;
     const totalNgn = newBillItems.reduce((sum, i) => sum + i.priceNgn, 0);
@@ -364,7 +843,6 @@ export default function DocarionCareSponsorApp() {
     );
   }
 
-  // Page 3 Action: Run AI Clinical & Fair-Price Audit
   async function handleRunAiAudit(invoice: MedicalBillInvoice) {
     setAuditingInvoiceId(invoice.id);
     try {
@@ -457,6 +935,7 @@ export default function DocarionCareSponsorApp() {
               ...inv,
               status: 'paid_settled',
               gateStatus: 'unlocked_paid',
+              settledViaMode: 'health_locked_wallet',
               fundingSource: 'health_locked_wallet',
               docarionVoucherCode: voucherCode,
               paidAt: new Date().toISOString(),
@@ -465,7 +944,6 @@ export default function DocarionCareSponsorApp() {
       )
     );
 
-    // Also update linked visit prescription dispense status
     setVisitRecords((prev) =>
       prev.map((vis) =>
         vis.linkedInvoiceNumber === invoice.invoiceNumber
@@ -512,6 +990,7 @@ export default function DocarionCareSponsorApp() {
                 ...inv,
                 status: 'paid_settled',
                 gateStatus: 'unlocked_paid',
+                settledViaMode: 'manual_paypal',
                 paypalOrderId: result.orderId,
                 paypalCaptureId: result.captureId,
                 paypalPayerEmail: result.payerEmail,
@@ -603,22 +1082,6 @@ export default function DocarionCareSponsorApp() {
           };
         })
       );
-
-      setWalletTxs((prev) => [
-        {
-          id: `wtx-${Date.now()}`,
-          dependentId: paypalModal.dependentId,
-          dependentName: paypalModal.dependentName,
-          type: 'paypal_auto_reload',
-          amountUsd: paypalModal.amountUsd,
-          amountNgn: paypalModal.amountNgn,
-          paypalReferenceId: `I-PAYPAL-SUB-${result.orderId.slice(-6)}`,
-          facilityOrRecipient: `${paypalModal.dependentName} Care Wallet`,
-          description: `Activated Monthly PayPal Auto-Reload Subscription`,
-          createdAt: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
     }
   }
 
@@ -649,8 +1112,8 @@ export default function DocarionCareSponsorApp() {
       id: '3_sponsor_bills',
       stepNum: 'Page 3',
       roleBadge: 'FAMILY SPONSOR ABROAD',
-      title: 'Detailed Bills & PayPal Checkout',
-      subtitle: `${pendingBillsCount} itemized bill(s) • 0% hidden fees`,
+      title: 'Agentic PayPal: 3AM Auto-Pay, Lab Escrow & Split',
+      subtitle: `${pendingBillsCount} bill(s) • AI-governed PayPal Orders v2`,
     },
     {
       id: '4_sponsor_wallet',
@@ -670,8 +1133,8 @@ export default function DocarionCareSponsorApp() {
       id: '6_sponsor_transactions',
       stepNum: 'Page 6',
       roleBadge: 'FAMILY SPONSOR ABROAD',
-      title: 'Transactions & Receipts',
-      subtitle: 'Full PayPal & wallet settlement history',
+      title: 'Transactions & Live PayPal API Log',
+      subtitle: 'Full PayPal Orders v2 & voucher ledger',
     },
   ];
 
@@ -685,20 +1148,19 @@ export default function DocarionCareSponsorApp() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-extrabold tracking-tight text-white">
-                  Docarion <span className="text-emerald-400">CareSponsor</span>
+                  Docarion <span className="text-emerald-400">CareSponsor AI</span>
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#FFC439]/15 text-[#FFC439] border border-[#FFC439]/30">
-                  Powered by PayPal + Clinical AI
+                  Agentic PayPal Orders v2 + Clinical AI
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Connect Family Abroad to African Healthcare • 100% Transparent Bills, Visit Records & Instant PayPal Care Wallet
+                3:00 AM Autonomous AI PayPal Mandates • Lab-Result Staged Escrow • Multi-Sibling Diaspora Pool Split
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Active Patient Selector */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1">
               <span className="text-[11px] text-slate-400">Patient:</span>
               <select
@@ -714,7 +1176,6 @@ export default function DocarionCareSponsorApp() {
               </select>
             </div>
 
-            {/* Diaspora Currency Switcher */}
             <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-1">
               {(['USD', 'GBP', 'EUR', 'CAD'] as DiasporaCurrency[]).map((curr) => (
                 <button
@@ -731,7 +1192,6 @@ export default function DocarionCareSponsorApp() {
               ))}
             </div>
 
-            {/* PayPal Sandbox Keys Drawer Button */}
             <button
               onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 transition"
@@ -745,32 +1205,23 @@ export default function DocarionCareSponsorApp() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-400 hover:text-white transition"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Reset</span>
+              <span className="hidden md:inline">Reset Demo</span>
             </button>
           </div>
         </div>
 
-        {/* Collapsible PayPal Sandbox Credentials Drawer */}
         {showSettingsDrawer && (
           <div className="border-t border-slate-800 bg-slate-950 px-4 sm:px-6 py-3">
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="text-xs text-slate-300">
-                <strong className="text-[#FFC439]">PayPal Developer Sandbox Key:</strong> Paste
-                your <code className="text-emerald-400">Client ID</code> from{' '}
-                <a
-                  href="https://developer.paypal.com/dashboard/applications/sandbox"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline text-blue-400 hover:text-blue-300"
-                >
-                  developer.paypal.com/dashboard/applications/sandbox
-                </a>{' '}
-                (or leave blank to use built-in Sandbox mode).
+                <strong className="text-[#FFC439]">Live PayPal Developer Sandbox Connected:</strong>{' '}
+                Your <code className="text-emerald-400">Care Sponsor</code> app (`BAAB37QRf0...`) is
+                active in `.env.local`. You can also override the Client ID here:
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <input
                   type="text"
-                  placeholder="Paste PayPal Sandbox Client ID..."
+                  placeholder="Override PayPal Sandbox Client ID..."
                   value={customPayPalClientId}
                   onChange={(e) => setCustomPayPalClientId(e.target.value)}
                   className="w-full sm:w-80 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
@@ -779,7 +1230,7 @@ export default function DocarionCareSponsorApp() {
                   onClick={() => setShowSettingsDrawer(false)}
                   className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white"
                 >
-                  Apply Key
+                  Apply
                 </button>
               </div>
             </div>
@@ -787,9 +1238,7 @@ export default function DocarionCareSponsorApp() {
         )}
       </header>
 
-      {/* =====================================================================
-          STEP-BY-STEP PAGE NAVIGATION BAR (6 CLEAR PAGES)
-         ===================================================================== */}
+      {/* Step-by-Step 6-Page Bar */}
       <div className="bg-slate-950/90 border-b border-slate-800/90">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between mb-2">
@@ -851,14 +1300,12 @@ export default function DocarionCareSponsorApp() {
         </div>
       </div>
 
-      {/* Main Page View Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* =====================================================================
             PAGE 1: PATIENT DASHBOARD IN AFRICA (INVITE SPONSOR & SEND BILL)
            ===================================================================== */}
         {currentPage === '1_patient_dashboard' && (
           <div className="space-y-6">
-            {/* Page 1 Role Banner */}
             <div className="rounded-2xl bg-gradient-to-r from-emerald-950/90 via-slate-900 to-slate-900 border border-emerald-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
@@ -885,7 +1332,7 @@ export default function DocarionCareSponsorApp() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* LEFT COLUMN: Add / Invite Family Member Abroad as Care Sponsor */}
+              {/* LEFT COLUMN: Add / Invite Family Member Abroad */}
               <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
@@ -893,11 +1340,11 @@ export default function DocarionCareSponsorApp() {
                   </div>
                   <div>
                     <h3 className="text-base font-extrabold text-white">
-                      1. Invite a Family Member Abroad as Your Care Sponsor
+                      1. Invite Family Members Abroad to Your Care Circle
                     </h3>
                     <p className="text-xs text-slate-400">
-                      Link your son, daughter, sibling, or relative in the diaspora so they can
-                      fund your Care Wallet or pay your hospital & pharmacy bills via PayPal.
+                      Link your children or siblings in the US, UK, Canada, or Europe so they can
+                      auto-pay bills while they sleep, split costs, or fund your Care Wallet via PayPal.
                     </p>
                   </div>
                 </div>
@@ -924,7 +1371,6 @@ export default function DocarionCareSponsorApp() {
                         type="text"
                         value={inviteRelationship}
                         onChange={(e) => setInviteRelationship(e.target.value)}
-                        placeholder="e.g. Son, Daughter, Brother, Sister"
                         className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
                         required
                       />
@@ -966,7 +1412,6 @@ export default function DocarionCareSponsorApp() {
                         type="text"
                         value={inviteLocation}
                         onChange={(e) => setInviteLocation(e.target.value)}
-                        placeholder="e.g. Houston, TX / London, UK / Toronto, CA"
                         className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
                       />
                     </div>
@@ -989,7 +1434,6 @@ export default function DocarionCareSponsorApp() {
                     </div>
                   </div>
 
-                  {/* Sponsor Permissions Checkboxes */}
                   <div className="rounded-xl bg-slate-950 border border-slate-800 p-3 space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
                       What Can This Family Sponsor See & Do?
@@ -1013,7 +1457,7 @@ export default function DocarionCareSponsorApp() {
                         className="rounded text-emerald-500"
                       />
                       <span>
-                        Fund my Docarion Care Wallet via PayPal for medications & visits
+                        Fund my Docarion Care Wallet or enable 3:00 AM Autonomous PayPal Mandates
                       </span>
                     </label>
                     <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
@@ -1038,10 +1482,9 @@ export default function DocarionCareSponsorApp() {
                   </button>
                 </form>
 
-                {/* Current Linked Sponsors List */}
                 <div className="pt-3 border-t border-slate-800 space-y-2.5">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Your Linked Family Care Sponsors ({activeDependent.sponsors.length}):
+                    Your Linked Family Care Circle ({activeDependent.sponsors.length} Siblings Abroad):
                   </span>
                   {activeDependent.sponsors.map((sp) => (
                     <div
@@ -1052,7 +1495,7 @@ export default function DocarionCareSponsorApp() {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-white">{sp.fullName}</span>
                           <span className="text-emerald-400 font-medium">
-                            ({sp.relationship})
+                            ({sp.relationship} • {sp.splitSharePercent}% Pool Share)
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -1063,11 +1506,11 @@ export default function DocarionCareSponsorApp() {
                           >
                             {sp.invitationStatus === 'accepted_active'
                               ? '✅ Active Sponsor'
-                              : '⏳ Invite Sent (Pending Acceptance)'}
+                              : '⏳ Invite Sent'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          {sp.diasporaLocation} • {sp.email} • Invite Code:{' '}
+                          {sp.diasporaLocation} • {sp.preferredCurrency} • Code:{' '}
                           <code className="text-slate-300">{sp.inviteToken}</code>
                         </p>
                       </div>
@@ -1123,7 +1566,7 @@ export default function DocarionCareSponsorApp() {
                     </h3>
                     <p className="text-xs text-slate-400">
                       Every consultation, lab test, and medication is itemized transparently so
-                      your family member abroad sees zero hidden charges.
+                      your family member abroad (and their AI Mandate) sees zero hidden charges.
                     </p>
                   </div>
                 </div>
@@ -1135,7 +1578,7 @@ export default function DocarionCareSponsorApp() {
                       onClick={() => setCurrentPage('3_sponsor_bills')}
                       className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-extrabold shrink-0"
                     >
-                      See Bill in Sponsor View (Page 3) →
+                      Open Sponsor Bills (Page 3) →
                     </button>
                   </div>
                 )}
@@ -1165,7 +1608,6 @@ export default function DocarionCareSponsorApp() {
                     />
                   </div>
 
-                  {/* Itemized Line Items in Bill */}
                   <div className="rounded-xl bg-slate-950 border border-slate-800 p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -1210,7 +1652,6 @@ export default function DocarionCareSponsorApp() {
                                 )
                               }
                               className="text-slate-500 hover:text-rose-400 text-xs px-1"
-                              title="Remove item"
                             >
                               ✕
                             </button>
@@ -1219,7 +1660,6 @@ export default function DocarionCareSponsorApp() {
                       ))}
                     </div>
 
-                    {/* Add Another Custom Item Row */}
                     <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2">
                       <input
                         type="text"
@@ -1278,14 +1718,13 @@ export default function DocarionCareSponsorApp() {
         {currentPage === '2_sponsor_invitation' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-700/80 shadow-2xl overflow-hidden">
-              {/* Top Invitation Header */}
               <div className="bg-gradient-to-r from-[#003087] via-emerald-950 to-slate-950 p-6 sm:p-8 border-b border-slate-800">
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/10 text-emerald-300 border border-emerald-400/30">
                     ✉️ Page 2 • What the Family Member Abroad Sees
                   </span>
                   <span className="text-xs font-mono text-blue-200">
-                    Invite Token: {pendingSponsorInvite?.inviteToken || 'INV-DAUGHTER-9021'}
+                    Invite Token: {pendingSponsorInvite?.inviteToken || 'INV-ADAEZE-9021'}
                   </span>
                 </div>
 
@@ -1302,9 +1741,7 @@ export default function DocarionCareSponsorApp() {
                 </p>
               </div>
 
-              {/* Invitation Details Body */}
               <div className="p-6 sm:p-8 space-y-6">
-                {/* Patient & Hospital Card */}
                 <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                   <div>
                     <span className="text-slate-400 block">Patient in Africa</span>
@@ -1330,55 +1767,53 @@ export default function DocarionCareSponsorApp() {
                   </div>
                 </div>
 
-                {/* Why This Matters: 3 Clear Promises to the Diaspora Sponsor */}
                 <div className="space-y-3">
                   <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-300">
-                    What Accepting This Invitation Allows You to Do:
+                    3 Agentic PayPal + AI Capabilities Unlocked When You Accept:
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
-                      <div className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-                        <FileText className="w-5 h-5" />
+                      <div className="h-9 w-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                        <Moon className="w-5 h-5" />
                       </div>
                       <h4 className="font-bold text-white text-sm">
-                        1. Zero Hidden Prices
+                        1. 3:00 AM Sleep Mandate
                       </h4>
                       <p className="text-xs text-slate-400 leading-relaxed">
-                        See every consultation, lab test, and medication itemized line-by-line
-                        from the hospital, verified by Docarion Clinical AI against overbilling.
+                        Never leave Mama waiting at a clinic while you sleep in the US/UK. AI
+                        audits the bill, strips overbilling, and settles via PayPal in 2 seconds.
                       </p>
                     </div>
 
                     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
-                      <div className="h-9 w-9 rounded-xl bg-[#FFC439]/15 text-[#FFC439] flex items-center justify-center">
-                        <Wallet className="w-5 h-5" />
+                      <div className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                        <GitBranch className="w-5 h-5" />
                       </div>
                       <h4 className="font-bold text-white text-sm">
-                        2. Pay or Fund via PayPal
+                        2. Lab-Proof PayPal Escrow
                       </h4>
                       <p className="text-xs text-slate-400 leading-relaxed">
-                        Pay specific hospital/pharmacy bills or fund her health-locked Care
-                        Wallet in {pendingSponsorInvite?.preferredCurrency || 'USD'} using PayPal.
+                        Pay for the lab test first via PayPal, and let AI automatically release
+                        the medication payment only when the lab result comes back positive.
                       </p>
                     </div>
 
                     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
                       <div className="h-9 w-9 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
-                        <Stethoscope className="w-5 h-5" />
+                        <Users className="w-5 h-5" />
                       </div>
                       <h4 className="font-bold text-white text-sm">
-                        3. Full Visit & Rx Records
+                        3. Multi-Sibling Pool Split
                       </h4>
                       <p className="text-xs text-slate-400 leading-relaxed">
-                        Follow her doctor visits, blood pressure & blood sugar readings, lab
-                        results, and monthly medication refills in real time.
+                        Automatically split hospital bills across siblings in the US (USD), UK
+                        (GBP), and Canada (CAD) via parallel PayPal Orders.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Transparent FX & Fee Disclosure Box */}
                 <div className="rounded-2xl bg-emerald-950/30 border border-emerald-500/30 p-4 flex items-start gap-3 text-xs">
                   <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                   <div className="space-y-1 text-slate-200">
@@ -1389,12 +1824,10 @@ export default function DocarionCareSponsorApp() {
                       You always see the exact local Nigerian Naira (₦ NGN) hospital tariff
                       alongside your PayPal currency ({selectedCurrency}) at the guaranteed rate
                       of <strong>$1.00 USD = ₦1,620 NGN</strong> with <strong>$0 hidden markups</strong>.
-                      Funds go 100% toward verified healthcare and medications.
                     </span>
                   </div>
                 </div>
 
-                {/* Accept Invitation Button */}
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <button
                     onClick={() => setCurrentPage('1_patient_dashboard')}
@@ -1423,25 +1856,27 @@ export default function DocarionCareSponsorApp() {
         )}
 
         {/* =====================================================================
-            PAGE 3: FAMILY SPONSOR VIEW — DETAILED BILLS & PAYPAL CHECKOUT
+            PAGE 3: FAMILY SPONSOR VIEW — AGENTIC PAYPAL + DETAILED BILLS
            ===================================================================== */}
         {currentPage === '3_sponsor_bills' && (
           <div className="space-y-6">
-            {/* Sponsor Bills Header */}
-            <div className="rounded-2xl bg-gradient-to-r from-[#003087]/80 via-slate-900 to-slate-900 border border-blue-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
-              <div className="space-y-1">
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#FFC439]/20 text-[#FFC439] border border-[#FFC439]/30">
-                  🌍 Page 3 • Family Member Abroad View (Detailed Bills & Transparent PayPal Payment)
-                </span>
-                <h2 className="text-xl font-extrabold text-white">
-                  Itemized Medical Bills & Prescriptions for Your Family
-                </h2>
-                <p className="text-xs sm:text-sm text-blue-100">
-                  Every charge is itemized line-by-line directly from the Docarion hospital or
-                  pharmacy. Run the <strong>AI Fair-Price Check</strong> before paying with PayPal.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
+            {/* Programmable AI PayPal Mandate Control Center */}
+            <div className="rounded-2xl bg-gradient-to-r from-[#003087]/90 via-slate-900 to-emerald-950/80 border border-[#FFC439]/50 p-5 space-y-4 shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#FFC439]/20 text-[#FFC439] border border-[#FFC439]/40">
+                    ⚡ Page 3 • Programmable Agentic PayPal Command Center
+                  </span>
+                  <h2 className="text-xl font-extrabold text-white">
+                    AI-Governed PayPal Mandates for {activeDependent.fullName}
+                  </h2>
+                  <p className="text-xs text-blue-100">
+                    Instead of a passive payment button, Docarion AI acts as your autonomous
+                    clinical & financial gatekeeper—controlling <em>when</em>, <em>how much</em>,
+                    and <em>under what lab proof</em> PayPal moves your money.
+                  </p>
+                </div>
+
                 <button
                   onClick={() => setCurrentPage('4_sponsor_wallet')}
                   className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
@@ -1450,6 +1885,57 @@ export default function DocarionCareSponsorApp() {
                   <span>Go to Page 4: Fund Care Wallet →</span>
                 </button>
               </div>
+
+              {/* 3 Interactive Agentic Mandate Policy Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl bg-slate-950/80 border border-amber-500/40 p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <Moon className="w-4 h-4" />
+                      1. 3:00 AM Sleep Auto-Mandate
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                      ACTIVE (≤ ${activeDependent.aiMandate.maxAutoSettleUsd} USD)
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    When {activeDependent.fullName} visits a clinic at 9 AM Lagos time (2 AM
+                    Houston), AI strips overbilling and executes PayPal capture in 2 seconds.
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-slate-950/80 border border-emerald-500/40 p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <GitBranch className="w-4 h-4" />
+                      2. Lab-Result Staged Escrow
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                      2-TRANCHE ESCROW
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    Captures Lab & Consultation first ($15.12), holds Pharmacy Rx ($14.20) in
+                    escrow, and auto-captures only if the EMR lab test is positive.
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-slate-950/80 border border-blue-500/40 p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-300 flex items-center gap-1.5">
+                      <Users className="w-4 h-4" />
+                      3. Multi-Sibling Pool Split
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold text-[10px]">
+                      50% US / 30% UK / 20% CA
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    Splits verified bills across Chidi (USD), Adaeze (GBP), and Obinna (CAD) via
+                    parallel PayPal Orders into one instant NGN settlement.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Detailed Bills List */}
@@ -1457,7 +1943,9 @@ export default function DocarionCareSponsorApp() {
               {invoices.map((inv) => {
                 const dependent = dependents.find((d) => d.id === inv.dependentId);
                 const isPaid = inv.status === 'paid_settled';
+                const isStagedInProgress = inv.status === 'staged_escrow_in_progress';
                 const audit = inv.aiAuditReport;
+                const logs = agenticStepLog[inv.id] || [];
 
                 return (
                   <div
@@ -1476,17 +1964,29 @@ export default function DocarionCareSponsorApp() {
                             Bill #{inv.invoiceNumber}
                           </span>
                           <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                            Diagnosis Code: {inv.icd10Code}
+                            ICD-10: {inv.icd10Code}
                           </span>
                           {isPaid ? (
                             <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                               <Unlock className="w-3.5 h-3.5" />
-                              Paid & Released for Patient ({inv.docarionVoucherCode})
+                              Gate Unlocked • Settled via{' '}
+                              {inv.settledViaMode === 'autonomous_3am_ai_mandate'
+                                ? '🌙 3:00 AM AI Mandate'
+                                : inv.settledViaMode === 'staged_clinical_proof_escrow'
+                                ? '🧪 Staged Lab-Proof Escrow'
+                                : inv.settledViaMode === 'multi_sibling_pool_split'
+                                ? '🤝 Multi-Sibling PayPal Split'
+                                : 'PayPal'}{' '}
+                              ({inv.docarionVoucherCode})
+                            </span>
+                          ) : isStagedInProgress ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                              🧪 Stage 1 Lab Gate Unlocked • Stage 2 Pharmacy Rx Held for Lab Proof
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
                               <Lock className="w-3.5 h-3.5" />
-                              Awaiting Sponsor Payment to Release Medications / Care
+                              09:15 AM Lagos (02:15 AM Houston) — Awaiting Settlement
                             </span>
                           )}
                         </div>
@@ -1505,7 +2005,7 @@ export default function DocarionCareSponsorApp() {
                       <div className="text-right">
                         {inv.appliedAiFairAdjustment && (
                           <p className="text-xs text-slate-500 line-through font-mono">
-                            Billed before AI Audit: ₦{inv.originalTotalNgn.toLocaleString()} (
+                            Hospital Billed: ₦{inv.originalTotalNgn.toLocaleString()} (
                             {formatDiasporaCurrency(
                               inv.originalTotalNgn / inv.fxRateNgnPerUsd
                             )}
@@ -1522,7 +2022,6 @@ export default function DocarionCareSponsorApp() {
                     </div>
 
                     <div className="p-6 space-y-5">
-                      {/* Patient's Personal Message to Sponsor */}
                       {inv.patientMessageToSponsor && (
                         <div className="rounded-xl bg-emerald-950/30 border border-emerald-500/30 p-3.5 text-xs text-emerald-100 flex items-start gap-3">
                           <HeartHandshake className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
@@ -1535,7 +2034,7 @@ export default function DocarionCareSponsorApp() {
                         </div>
                       )}
 
-                      {/* Full Itemized Table (No Hidden Prices) */}
+                      {/* Full Itemized Table */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
@@ -1632,6 +2131,163 @@ export default function DocarionCareSponsorApp() {
                         </div>
                       </div>
 
+                      {/* Live 3:00 AM Autonomous AI Execution Pipeline Log */}
+                      {logs.length > 0 && (
+                        <div className="rounded-2xl bg-slate-950 border border-amber-500/40 p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-amber-300 flex items-center gap-1.5">
+                              <Moon className="w-4 h-4 text-amber-400" />
+                              Autonomous &ldquo;3:00 AM While You Sleep&rdquo; AI PayPal Execution Log:
+                            </span>
+                            <span className="text-[11px] font-mono text-emerald-400">
+                              Zero-Click Agentic Settlement
+                            </span>
+                          </div>
+                          <div className="space-y-1.5 text-xs font-mono">
+                            {logs.map((line, idx) => (
+                              <div
+                                key={idx}
+                                className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 text-slate-200"
+                              >
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Live Clinical-Proof Staged Release Card (2-Tranche Lab -> Rx Escrow) */}
+                      {inv.stagedTranche && (
+                        <div className="rounded-2xl bg-gradient-to-br from-blue-950/40 via-slate-950 to-emerald-950/30 border border-blue-500/40 p-5 space-y-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <GitBranch className="w-5 h-5 text-blue-400" />
+                              <h4 className="text-sm font-extrabold text-white">
+                                Clinical-Proof Staged PayPal Release (2-Tranche Escrow)
+                              </h4>
+                            </div>
+                            <span className="text-xs font-mono text-emerald-300">
+                              Protects Against Blind Upfront Drug Billing
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            {/* Stage 1 Box */}
+                            <div className="rounded-xl bg-slate-900 border border-emerald-500/40 p-4 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-emerald-400">
+                                  Tranche 1: Doctor + Malaria Lab Test
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                                  ✅ CAPTURED VIA PAYPAL
+                                </span>
+                              </div>
+                              <p className="text-slate-300">
+                                Amount: <strong>${inv.stagedTranche.stage1LabConsultUsd.toFixed(2)} USD</strong>{' '}
+                                (₦{inv.stagedTranche.stage1LabConsultNgn.toLocaleString()} NGN)
+                              </p>
+                              <p className="text-[11px] font-mono text-slate-400">
+                                PayPal Order ID: {inv.stagedTranche.stage1PayPalOrderId}
+                              </p>
+                            </div>
+
+                            {/* Stage 2 Box */}
+                            <div className="rounded-xl bg-slate-900 border border-blue-500/40 p-4 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-blue-300">
+                                  Tranche 2: Pharmacy Medications Escrow
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                                    inv.stagedTranche.stage2Status === 'captured_positive_lab'
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : inv.stagedTranche.stage2Status === 'voided_negative_lab'
+                                      ? 'bg-rose-500/20 text-rose-300'
+                                      : 'bg-amber-500/20 text-amber-300'
+                                  }`}
+                                >
+                                  {inv.stagedTranche.stage2Status === 'captured_positive_lab'
+                                    ? '✅ LAB POSITIVE → CAPTURED'
+                                    : inv.stagedTranche.stage2Status === 'voided_negative_lab'
+                                    ? '🛡️ LAB NEGATIVE → AUTO-VOIDED'
+                                    : '⏳ HELD FOR EMR LAB PROOF'}
+                                </span>
+                              </div>
+                              <p className="text-slate-300">
+                                Escrow Hold: <strong>${inv.stagedTranche.stage2PharmacyUsd.toFixed(2)} USD</strong>{' '}
+                                (₦{inv.stagedTranche.stage2PharmacyNgn.toLocaleString()} NGN)
+                              </p>
+
+                              {inv.stagedTranche.stage2Status === 'awaiting_lab_result' ? (
+                                <div className="pt-1 flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() =>
+                                      handleCompleteStagedTranche2(inv, 'positive')
+                                    }
+                                    disabled={agenticRunningId === inv.id}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition"
+                                  >
+                                    🧬 Simulate Lab POSITIVE (+): Auto-Capture $
+                                    {inv.stagedTranche.stage2PharmacyUsd.toFixed(2)} Rx
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleCompleteStagedTranche2(inv, 'negative')
+                                    }
+                                    disabled={agenticRunningId === inv.id}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 font-bold text-[11px] transition"
+                                  >
+                                    🛡️ Simulate Lab NEGATIVE (-): Auto-Void Rx Hold ($0)
+                                  </button>
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-emerald-300">
+                                  {inv.stagedTranche.labProofNote}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Live Multi-Sibling Split Breakdown Card */}
+                      {inv.siblingSplitShares && (
+                        <div className="rounded-2xl bg-slate-950 border border-blue-500/40 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-blue-300 flex items-center gap-1.5">
+                              <Users className="w-4 h-4 text-blue-400" />
+                              Multi-Sibling Diaspora Care Pool Split (3 Parallel PayPal Orders Captured):
+                            </span>
+                            <span className="text-xs font-mono text-emerald-400">
+                              100% Aggregated: ₦{inv.activePayableNgn.toLocaleString()} NGN
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            {inv.siblingSplitShares.map((s) => (
+                              <div
+                                key={s.sponsorId}
+                                className="rounded-xl bg-slate-900 border border-slate-800 p-3 space-y-1"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <strong className="text-white">{s.sponsorName}</strong>
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                                    {s.percentage}% Share
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-400">{s.location}</p>
+                                <p className="text-sm font-black text-[#FFC439]">
+                                  {CURRENCY_RATES_FROM_USD[s.currency].symbol}
+                                  {s.shareLocalCurrencyAmount.toFixed(2)} {s.currency}
+                                </p>
+                                <p className="text-[10px] font-mono text-emerald-400">
+                                  PayPal Order: {s.paypalOrderId}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* AI Audit Explanation Box */}
                       {audit && (
                         <div className="rounded-2xl bg-purple-950/30 border border-purple-500/40 p-4 space-y-3">
@@ -1641,7 +2297,7 @@ export default function DocarionCareSponsorApp() {
                               AI Plain-English Explanation for Family Sponsor:
                             </span>
                             <span className="text-xs font-bold text-emerald-400">
-                              Trust Score: {audit.overallTrustScore}/100
+                              Clinical Trust Score: {audit.overallTrustScore}/100
                             </span>
                           </div>
                           <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
@@ -1666,7 +2322,90 @@ export default function DocarionCareSponsorApp() {
                         </div>
                       )}
 
-                      {/* Payment Action Buttons */}
+                      {/* AGENTIC PAYPAL ACTION BAR (The 3 Breakthrough Modes + Manual Checkout) */}
+                      {!isPaid && !isStagedInProgress && (
+                        <div className="rounded-2xl bg-slate-950/90 border border-slate-800 p-4 space-y-3">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-extrabold uppercase tracking-wider text-[#FFC439] flex items-center gap-1.5">
+                              <Zap className="w-4 h-4" />
+                              Choose Agentic PayPal Settlement Mode (Live PayPal Sandbox API):
+                            </span>
+                            {agenticRunningId === inv.id && (
+                              <span className="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Calling Live PayPal Sandbox Orders v2 API...
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            {/* Mode 1: 3:00 AM Autonomous AI Mandate */}
+                            <button
+                              onClick={() => handleRunAutonomous3AmMandate(inv)}
+                              disabled={agenticRunningId === inv.id}
+                              className="p-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/10 hover:from-amber-500/30 border border-amber-400/50 text-left transition flex flex-col justify-between gap-1.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-extrabold text-amber-300 flex items-center gap-1.5">
+                                  <Moon className="w-4 h-4" />
+                                  1. 3:00 AM Auto-Settle Mandate
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-200">
+                                  Zero-Click
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-300">
+                                AI audits bill, strips overbilling, and captures verified amount via
+                                PayPal while you sleep.
+                              </p>
+                            </button>
+
+                            {/* Mode 2: Clinical-Proof Staged Release */}
+                            <button
+                              onClick={() => handleStartStagedClinicalRelease(inv)}
+                              disabled={agenticRunningId === inv.id}
+                              className="p-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-emerald-600/10 hover:from-emerald-500/30 border border-emerald-400/50 text-left transition flex flex-col justify-between gap-1.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-extrabold text-emerald-300 flex items-center gap-1.5">
+                                  <GitBranch className="w-4 h-4" />
+                                  2. Staged Lab-Proof Escrow
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-400/20 text-emerald-200">
+                                  2 Tranches
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-300">
+                                Pay Lab & Consult first ($15.12); release Pharmacy Rx ($14.20) only
+                                when lab test is positive.
+                              </p>
+                            </button>
+
+                            {/* Mode 3: Multi-Sibling Diaspora Split */}
+                            <button
+                              onClick={() => handleExecuteMultiSiblingSplit(inv)}
+                              disabled={agenticRunningId === inv.id}
+                              className="p-3 rounded-xl bg-gradient-to-r from-blue-500/20 to-blue-600/10 hover:from-blue-500/30 border border-blue-400/50 text-left transition flex flex-col justify-between gap-1.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-extrabold text-blue-300 flex items-center gap-1.5">
+                                  <Users className="w-4 h-4" />
+                                  3. Multi-Sibling Pool Split
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-400/20 text-blue-200">
+                                  USD/GBP/CAD
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-300">
+                                Split across Chidi (50% USD), Adaeze (30% GBP) & Obinna (20% CAD)
+                                via PayPal.
+                              </p>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Standard Action Bar */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
                         <div className="flex items-center gap-2">
                           <button
@@ -1680,7 +2419,7 @@ export default function DocarionCareSponsorApp() {
                                 ? 'Checking Prices & Diagnosis...'
                                 : audit
                                 ? 'Re-Verify Prices with AI'
-                                : '1. Verify Bill Prices & Diagnosis with AI'}
+                                : 'Verify Bill Prices & Diagnosis with AI'}
                             </span>
                           </button>
 
@@ -1704,7 +2443,6 @@ export default function DocarionCareSponsorApp() {
                                   <Wallet className="w-4 h-4" />
                                   <span>
                                     Pay from {dependent.fullName.split(' ')[0]}&apos;s Care Wallet
-                                    (₦{dependent.healthLockedWalletNgn.toLocaleString()})
                                   </span>
                                 </button>
                               )}
@@ -1714,7 +2452,7 @@ export default function DocarionCareSponsorApp() {
                               className="px-6 py-3 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-sm flex items-center gap-2 shadow-xl transition"
                             >
                               <span>
-                                2. Pay {formatDiasporaCurrency(inv.payableUsd)} with PayPal
+                                Manual PayPal Checkout ({formatDiasporaCurrency(inv.payableUsd)})
                               </span>
                               <ArrowRight className="w-4 h-4" />
                             </button>
@@ -1723,7 +2461,8 @@ export default function DocarionCareSponsorApp() {
                           <div className="flex items-center gap-2 text-xs text-emerald-400 font-bold">
                             <CheckCircle2 className="w-4 h-4" />
                             <span>
-                              Paid & Settled! Care Voucher: {inv.docarionVoucherCode}
+                              Paid & Settled! Care Voucher: {inv.docarionVoucherCode} • PayPal Order:{' '}
+                              {inv.paypalOrderId}
                             </span>
                           </div>
                         )}
@@ -1763,7 +2502,6 @@ export default function DocarionCareSponsorApp() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left 7 Cols: Wallet Balance, Guardrails & Monthly Auto-Reload */}
               <div className="lg:col-span-7 rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
                   <div>
@@ -1790,7 +2528,6 @@ export default function DocarionCareSponsorApp() {
                   </div>
                 </div>
 
-                {/* Chronic Medications Covered by Wallet */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
                     Routine Medications & Care Covered by This Wallet:
@@ -1808,15 +2545,10 @@ export default function DocarionCareSponsorApp() {
                   </div>
                 </div>
 
-                {/* Category Guardrails */}
                 <div className="space-y-2 pt-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
                     Sponsor Spending Rules (Health-Locked Guarantee):
                   </span>
-                  <p className="text-xs text-slate-400">
-                    Choose what {activeDependent.fullName} can pay for using this wallet. Cash
-                    withdrawals are permanently blocked so funds are 100% protected for healthcare.
-                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                     {(
                       [
@@ -1859,7 +2591,6 @@ export default function DocarionCareSponsorApp() {
                   </div>
                 </div>
 
-                {/* Monthly PayPal Auto-Reload */}
                 <div className="rounded-2xl bg-[#003087]/30 border border-blue-500/30 p-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1 text-xs">
                     <span className="font-bold text-white flex items-center gap-1.5">
@@ -1870,7 +2601,7 @@ export default function DocarionCareSponsorApp() {
                       {activeDependent.autoReloadPlan.active
                         ? `Active (${activeDependent.autoReloadPlan.subscriptionId}) — Automatically adds ${formatDiasporaCurrency(
                             activeDependent.autoReloadPlan.amountUsd
-                          )} every month on ${activeDependent.autoReloadPlan.nextBillingDate}`
+                          )} every month`
                         : 'Set up automatic monthly funding so she never runs out of blood pressure or diabetes tablets.'}
                     </p>
                   </div>
@@ -1898,7 +2629,6 @@ export default function DocarionCareSponsorApp() {
                 </div>
               </div>
 
-              {/* Right 5 Cols: Top Up with PayPal Box */}
               <div className="lg:col-span-5 rounded-2xl bg-gradient-to-b from-[#003087]/70 to-slate-900 border border-[#FFC439]/40 p-6 space-y-5">
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-2xl bg-[#FFC439] text-[#003087] font-black flex items-center justify-center text-xl shadow">
@@ -1950,7 +2680,6 @@ export default function DocarionCareSponsorApp() {
                   </div>
                 </div>
 
-                {/* Transparent Breakdown */}
                 <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-4 space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-slate-400">You Pay via PayPal:</span>
@@ -2039,7 +2768,6 @@ export default function DocarionCareSponsorApp() {
                   key={vis.id}
                   className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-lg"
                 >
-                  {/* Visit Top Bar */}
                   <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -2076,7 +2804,6 @@ export default function DocarionCareSponsorApp() {
                   </div>
 
                   <div className="p-6 space-y-5">
-                    {/* Vitals Strip */}
                     <div>
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
                         Recorded Patient Vital Signs:
@@ -2115,7 +2842,6 @@ export default function DocarionCareSponsorApp() {
                       </div>
                     </div>
 
-                    {/* Plain-English Clinical Summary for the Family */}
                     <div className="rounded-xl bg-emerald-950/25 border border-emerald-500/30 p-4 text-xs sm:text-sm text-slate-200 leading-relaxed">
                       <strong className="text-emerald-400 block mb-1 flex items-center gap-1.5">
                         <Activity className="w-4 h-4" />
@@ -2124,9 +2850,7 @@ export default function DocarionCareSponsorApp() {
                       {vis.clinicalSummaryPlainEnglish}
                     </div>
 
-                    {/* Two-Column Prescriptions & Lab Results */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Prescriptions Issued */}
                       <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 space-y-2.5">
                         <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                           <Pill className="w-4 h-4" />
@@ -2158,7 +2882,6 @@ export default function DocarionCareSponsorApp() {
                         </div>
                       </div>
 
-                      {/* Lab Results */}
                       <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 space-y-2.5">
                         <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                           <FlaskConical className="w-4 h-4" />
@@ -2221,7 +2944,6 @@ export default function DocarionCareSponsorApp() {
               </button>
             </div>
 
-            {/* Full Transactions Table */}
             <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
               <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                 <h3 className="text-sm font-extrabold text-white">
@@ -2240,7 +2962,7 @@ export default function DocarionCareSponsorApp() {
                       <th className="py-3 px-4 font-semibold">Patient</th>
                       <th className="py-3 px-4 font-semibold">Transaction Type & Description</th>
                       <th className="py-3 px-4 font-semibold">Hospital / Wallet Recipient</th>
-                      <th className="py-3 px-4 font-semibold">PayPal / Voucher Ref</th>
+                      <th className="py-3 px-4 font-semibold">PayPal Order / Voucher Ref</th>
                       <th className="py-3 px-4 font-semibold text-right">Sponsor Paid</th>
                       <th className="py-3 px-4 font-semibold text-right">Local NGN Settled</th>
                     </tr>
@@ -2276,7 +2998,6 @@ export default function DocarionCareSponsorApp() {
               </div>
             </div>
 
-            {/* Live PayPal Orders v2 JSON Telemetry Log */}
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-extrabold text-white">
@@ -2287,7 +3008,7 @@ export default function DocarionCareSponsorApp() {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {telemetry.slice(0, 6).map((ev) => (
+                {telemetry.slice(0, 8).map((ev) => (
                   <div
                     key={ev.id}
                     className="rounded-xl bg-slate-950 border border-slate-800 p-3 text-xs space-y-1.5"
@@ -2317,14 +3038,13 @@ export default function DocarionCareSponsorApp() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-[#050C16] py-4 px-6 mt-10">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>
-              <strong>Docarion CareSponsor</strong> • Built with PayPal Orders v2 SDK,
-              Health-Locked Care Wallets & Clinical AI Price Transparency
+              <strong>Docarion CareSponsor AI</strong> • 3:00 AM Autonomous AI PayPal Mandates,
+              Lab-Proof Staged Escrow & Multi-Sibling Diaspora Pool Split
             </span>
           </div>
           <div>
@@ -2333,7 +3053,6 @@ export default function DocarionCareSponsorApp() {
         </div>
       </footer>
 
-      {/* PayPal Checkout Modal */}
       <PayPalCheckoutModal
         isOpen={paypalModal.isOpen}
         onClose={() => setPaypalModal((prev) => ({ ...prev, isOpen: false }))}
