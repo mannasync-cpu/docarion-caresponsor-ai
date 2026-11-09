@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       docarion_settlement: {
+        merchant_sandbox_account: 'sb-ieki653819020@business.example.com',
         voucher_code: voucherCode,
         health_locked_escrow_release: 'INSTANT_SETTLED',
         local_currency: 'NGN',

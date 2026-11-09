@@ -76,7 +76,7 @@ export function PayPalCheckoutModal({
   const effectiveClientId =
     customClientId?.trim() ||
     process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
-    'test';
+    'BAAB37QRf0BL0rn8yLgDRYIUkMQHdpNScA_A5jG_WyBUB8utICxEaBSkvgUICM0KS1-dPSktmDT8aPY3fQ';
 
   async function executePayPalOrdersV2Flow(rail: 'paypal_checkout' | 'paypal_pay_in_4') {
     setSelectedRail(rail);
