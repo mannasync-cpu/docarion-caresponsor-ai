@@ -6,7 +6,6 @@ import {
   Sparkles,
   Wallet,
   Building2,
-  Bot,
   CheckCircle2,
   AlertTriangle,
   Lock,
@@ -19,20 +18,29 @@ import {
   FlaskConical,
   ArrowRight,
   Send,
-  Terminal,
   HeartHandshake,
   UserPlus,
   CreditCard,
   Settings,
-  FileCheck2,
-  MapPin,
+  FileText,
+  Mail,
+  Activity,
+  Receipt,
+  Check,
+  Copy,
+  ExternalLink,
+  Calendar,
+  UserCheck,
 } from 'lucide-react';
 import { BrandLogoMark } from '@/components/BrandLogo';
 import { PayPalCheckoutModal } from '@/components/PayPalCheckoutModal';
 import {
+  BillCategory,
   CareDependent,
+  CareSponsor,
   DiasporaCurrency,
   MedicalBillInvoice,
+  PatientVisitRecord,
   PayPalTelemetryEvent,
   WalletTransaction,
 } from '@/lib/types';
@@ -42,33 +50,83 @@ import {
   INITIAL_DEPENDENTS,
   INITIAL_INVOICES,
   INITIAL_TELEMETRY_EVENTS,
+  INITIAL_VISIT_RECORDS,
   INITIAL_WALLET_TRANSACTIONS,
 } from '@/lib/initial-data';
-import { CopilotActionCard } from '@/app/api/ai/copilot/route';
 
-type ActiveTab = 'sponsor_hub' | 'care_wallet' | 'facility_simulator' | 'ai_copilot';
-
-interface ChatMessage {
-  id: string;
-  sender: 'user' | 'ai';
-  text: string;
-  timestamp: string;
-  actionCard?: CopilotActionCard | null;
-}
+type JourneyPage =
+  | '1_patient_dashboard'
+  | '2_sponsor_invitation'
+  | '3_sponsor_bills'
+  | '4_sponsor_wallet'
+  | '5_sponsor_visit_records'
+  | '6_sponsor_transactions';
 
 export default function DocarionCareSponsorApp() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('sponsor_hub');
+  const [currentPage, setCurrentPage] = useState<JourneyPage>('1_patient_dashboard');
   const [selectedCurrency, setSelectedCurrency] = useState<DiasporaCurrency>('USD');
-  const [selectedDependentFilter, setSelectedDependentFilter] = useState<string>('ALL');
+  const [activeDependentId, setActiveDependentId] = useState<string>('dep-mama-ngozi');
 
   const [dependents, setDependents] = useState<CareDependent[]>(INITIAL_DEPENDENTS);
   const [invoices, setInvoices] = useState<MedicalBillInvoice[]>(INITIAL_INVOICES);
+  const [visitRecords, setVisitRecords] = useState<PatientVisitRecord[]>(INITIAL_VISIT_RECORDS);
   const [walletTxs, setWalletTxs] = useState<WalletTransaction[]>(INITIAL_WALLET_TRANSACTIONS);
   const [telemetry, setTelemetry] = useState<PayPalTelemetryEvent[]>(INITIAL_TELEMETRY_EVENTS);
 
   const [auditingInvoiceId, setAuditingInvoiceId] = useState<string | null>(null);
   const [customPayPalClientId, setCustomPayPalClientId] = useState<string>('');
   const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Page 1 (Patient View): Invite Family Member Abroad Form
+  const [inviteName, setInviteName] = useState<string>('Adaeze Okafor-Williams');
+  const [inviteEmail, setInviteEmail] = useState<string>('adaeze.williams@uk-family.co.uk');
+  const [invitePhone, setInvitePhone] = useState<string>('+44 7700 900412');
+  const [inviteRelationship, setInviteRelationship] = useState<string>('Daughter');
+  const [inviteLocation, setInviteLocation] = useState<string>('London, United Kingdom');
+  const [inviteCurrency, setInviteCurrency] = useState<DiasporaCurrency>('GBP');
+  const [permRecords, setPermRecords] = useState<boolean>(true);
+  const [permWallet, setPermWallet] = useState<boolean>(true);
+  const [permBills, setPermBills] = useState<boolean>(true);
+  const [activeInviteSponsor, setActiveInviteSponsor] = useState<CareSponsor | null>(null);
+
+  // Page 1 (Patient View): Create & Send Detailed Bill to Sponsor Abroad
+  const [newBillDiagnosis, setNewBillDiagnosis] = useState<string>(
+    'Routine Diabetes & Hypertension Checkup + 30-Day Medication Refill'
+  );
+  const [newBillNoteToSponsor, setNewBillNoteToSponsor] = useState<string>(
+    'Hello my dear, I just finished my checkup at Lagos Lagoon Hospital. Here is the itemized list of my consultation, blood sugar test, and monthly medications.'
+  );
+  const [newBillItems, setNewBillItems] = useState<
+    { name: string; category: BillCategory; spec: string; priceNgn: number }[]
+  >([
+    {
+      name: 'Outpatient Doctor Consultation',
+      category: 'consultation',
+      spec: 'Internal Medicine Follow-Up Visit',
+      priceNgn: 15000,
+    },
+    {
+      name: 'Fasting Blood Glucose & HbA1c Lab Panel',
+      category: 'laboratory',
+      spec: 'Diabetes Glycemic Control Check',
+      priceNgn: 12000,
+    },
+    {
+      name: 'Metformin XR 1000mg + Amlodipine 10mg (30-Day Pack)',
+      category: 'medication',
+      spec: '60 Tablets Metformin + 30 Tablets Amlodipine',
+      priceNgn: 18500,
+    },
+  ]);
+  const [customItemName, setCustomItemName] = useState<string>('');
+  const [customItemCategory, setCustomItemCategory] = useState<BillCategory>('medication');
+  const [customItemSpec, setCustomItemSpec] = useState<string>('');
+  const [customItemPriceNgn, setCustomItemPriceNgn] = useState<string>('');
+  const [billSentBanner, setBillSentBanner] = useState<string | null>(null);
+
+  // Page 4 (Wallet Funding): Amount Selection
+  const [walletTopupAmountUsd, setWalletTopupAmountUsd] = useState<number>(50);
 
   // PayPal Modal State
   const [paypalModal, setPaypalModal] = useState<{
@@ -97,53 +155,15 @@ export default function DocarionCareSponsorApp() {
     amountNgn: 0,
   });
 
-  // Wallet Top-Up Custom State
-  const [walletTargetDepId, setWalletTargetDepId] = useState<string>('dep-mama-ngozi');
-  const [walletTopupAmountUsd, setWalletTopupAmountUsd] = useState<number>(50);
-
-  // African Provider / Patient Simulator State
-  const [simDependentId, setSimDependentId] = useState<string>('dep-mama-ngozi');
-  const [simScenarioPreset, setSimScenarioPreset] = useState<
-    'diabetes_overbilled' | 'malaria_pharmacy' | 'emergency_asthma'
-  >('diabetes_overbilled');
-  const [newSponsorName, setNewSponsorName] = useState<string>('Engr. Obinna Okafor');
-  const [newSponsorEmail, setNewSponsorEmail] = useState<string>('obinna.okafor@toronto-care.ca');
-  const [newSponsorRelation, setNewSponsorRelation] = useState<string>('Son (Co-Guarantor)');
-  const [newSponsorLocation, setNewSponsorLocation] = useState<string>('Toronto, ON, Canada');
-  const [newSponsorCurrency, setNewSponsorCurrency] = useState<DiasporaCurrency>('CAD');
-  const [sponsorAddedBanner, setSponsorAddedBanner] = useState<string | null>(null);
-  const [dispatchedBillBanner, setDispatchedBillBanner] = useState<string | null>(null);
-
-  // AI Copilot State
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-welcome',
-      sender: 'ai',
-      text: "Welcome to **Docarion CareSponsor AI**! You are registered as the Primary Diaspora Financial Guarantor for **3 family members** in Nigeria.\n\nInstead of guessing which hospital or pharmacy your loved ones visited, every consultation, lab order, and prescription on the Docarion network routes here automatically. Ask me to **audit Mama Ngozi's hospital bill** for overbilling or **prepare a PayPal checkout**!",
-      timestamp: 'Just now',
-      actionCard: {
-        type: 'pay_invoice_paypal',
-        title: "Audit & Settle Mama Ngozi's Hospital & Pharmacy Bill",
-        subtitle: 'Lagos Lagoon Specialist Hospital • AI detects $34.88 in overbilled items',
-        invoiceId: 'inv-9041',
-        dependentId: 'dep-mama-ngozi',
-        amountUsd: 29.32,
-        amountNgn: 47500,
-        savingsUsd: 34.88,
-        badgeText: 'AI Saves $34.88 USD',
-      },
-    },
-  ]);
-  const [chatInput, setChatInput] = useState<string>('');
-  const [chatLoading, setChatLoading] = useState<boolean>(false);
-
-  // Hydrate from localStorage if available
+  // Hydrate from localStorage
   useEffect(() => {
     try {
-      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v1');
-      const savedDeps = localStorage.getItem('docarion_cs_deps_v1');
+      const savedInvoices = localStorage.getItem('docarion_cs_invoices_v2');
+      const savedDeps = localStorage.getItem('docarion_cs_deps_v2');
+      const savedTxs = localStorage.getItem('docarion_cs_txs_v2');
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
       if (savedDeps) setDependents(JSON.parse(savedDeps));
+      if (savedTxs) setWalletTxs(JSON.parse(savedTxs));
     } catch {
       // Ignore storage errors
     }
@@ -151,12 +171,21 @@ export default function DocarionCareSponsorApp() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('docarion_cs_invoices_v1', JSON.stringify(invoices));
-      localStorage.setItem('docarion_cs_deps_v1', JSON.stringify(dependents));
+      localStorage.setItem('docarion_cs_invoices_v2', JSON.stringify(invoices));
+      localStorage.setItem('docarion_cs_deps_v2', JSON.stringify(dependents));
+      localStorage.setItem('docarion_cs_txs_v2', JSON.stringify(walletTxs));
     } catch {
       // Ignore storage errors
     }
-  }, [invoices, dependents]);
+  }, [invoices, dependents, walletTxs]);
+
+  const activeDependent =
+    dependents.find((d) => d.id === activeDependentId) || dependents[0];
+
+  const pendingSponsorInvite =
+    activeInviteSponsor ||
+    activeDependent.sponsors.find((s) => s.invitationStatus === 'pending_acceptance') ||
+    activeDependent.sponsors[0];
 
   const currencyMeta = CURRENCY_RATES_FROM_USD[selectedCurrency];
 
@@ -172,13 +201,170 @@ export default function DocarionCareSponsorApp() {
   function resetDemoState() {
     setDependents(INITIAL_DEPENDENTS);
     setInvoices(INITIAL_INVOICES);
+    setVisitRecords(INITIAL_VISIT_RECORDS);
     setWalletTxs(INITIAL_WALLET_TRANSACTIONS);
     setTelemetry(INITIAL_TELEMETRY_EVENTS);
-    localStorage.removeItem('docarion_cs_invoices_v1');
-    localStorage.removeItem('docarion_cs_deps_v1');
+    localStorage.removeItem('docarion_cs_invoices_v2');
+    localStorage.removeItem('docarion_cs_deps_v2');
+    localStorage.removeItem('docarion_cs_txs_v2');
   }
 
-  // Run AI Clinical & Fair-Price Audit on an Invoice
+  // Page 1 Action: Patient invites a family member abroad
+  function handleSendSponsorInvitation(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteName.trim() || !inviteEmail.trim()) return;
+
+    const token = `INV-${inviteName
+      .trim()
+      .split(' ')[0]
+      .toUpperCase()}-${Math.floor(1000 + Math.random() * 8999)}`;
+
+    const newSponsor: CareSponsor = {
+      id: `spon-${Date.now()}`,
+      inviteToken: token,
+      fullName: inviteName.trim(),
+      email: inviteEmail.trim(),
+      phoneOrWhatsapp: invitePhone.trim(),
+      relationship: inviteRelationship.trim() || 'Family Member',
+      diasporaLocation: inviteLocation.trim() || 'Diaspora',
+      preferredCurrency: inviteCurrency,
+      paypalPayerEmail: inviteEmail.trim(),
+      invitationStatus: 'pending_acceptance',
+      permissions: {
+        viewVisitRecordsAndPrescriptions: permRecords,
+        fundCareWallet: permWallet,
+        autoReceiveBills: permBills,
+      },
+      addedAt: new Date().toISOString().slice(0, 10),
+      isPrimaryGuarantor: false,
+    };
+
+    setDependents((prev) =>
+      prev.map((d) =>
+        d.id === activeDependent.id
+          ? {
+              ...d,
+              sponsors: [
+                ...d.sponsors.filter((s) => s.email !== newSponsor.email),
+                newSponsor,
+              ],
+            }
+          : d
+      )
+    );
+
+    setActiveInviteSponsor(newSponsor);
+  }
+
+  // Page 2 Action: Family member abroad accepts the Care Sponsor invitation
+  function handleAcceptSponsorInvitation(sponsorId: string) {
+    const sponsor = activeDependent.sponsors.find((s) => s.id === sponsorId);
+    if (sponsor) {
+      setSelectedCurrency(sponsor.preferredCurrency);
+    }
+    setDependents((prev) =>
+      prev.map((d) => ({
+        ...d,
+        sponsors: d.sponsors.map((s) =>
+          s.id === sponsorId
+            ? {
+                ...s,
+                invitationStatus: 'accepted_active',
+                acceptedAt: new Date().toISOString().slice(0, 10),
+              }
+            : s
+        ),
+      }))
+    );
+    if (activeInviteSponsor && activeInviteSponsor.id === sponsorId) {
+      setActiveInviteSponsor({
+        ...activeInviteSponsor,
+        invitationStatus: 'accepted_active',
+        acceptedAt: new Date().toISOString().slice(0, 10),
+      });
+    }
+    setCurrentPage('3_sponsor_bills');
+  }
+
+  // Page 1 Action: Add a line item to the patient's bill builder
+  function handleAddLineItemToDraft() {
+    const price = Number(customItemPriceNgn);
+    if (!customItemName.trim() || !price || price <= 0) return;
+    setNewBillItems((prev) => [
+      ...prev,
+      {
+        name: customItemName.trim(),
+        category: customItemCategory,
+        spec: customItemSpec.trim() || 'Standard Care Item',
+        priceNgn: price,
+      },
+    ]);
+    setCustomItemName('');
+    setCustomItemSpec('');
+    setCustomItemPriceNgn('');
+  }
+
+  // Page 1 Action: Patient sends the detailed itemized bill to their Care Sponsor abroad
+  function handlePatientSendDetailedBill() {
+    if (newBillItems.length === 0) return;
+    const totalNgn = newBillItems.reduce((sum, i) => sum + i.priceNgn, 0);
+    const totalUsd = Number((totalNgn / DEFAULT_FX_NGN_PER_USD).toFixed(2));
+    const invoiceNum = `DOC-INV-2026-${Math.floor(9100 + Math.random() * 899)}`;
+    const primarySponsor =
+      activeDependent.sponsors.find((s) => s.invitationStatus === 'accepted_active') ||
+      activeDependent.sponsors[0];
+
+    const createdInvoice: MedicalBillInvoice = {
+      id: `inv-${Date.now()}`,
+      invoiceNumber: invoiceNum,
+      dependentId: activeDependent.id,
+      dependentName: activeDependent.fullName,
+      docarionPatientId: activeDependent.docarionPatientId,
+      facilityName: activeDependent.primaryFacilityName,
+      facilityType: 'Hospital',
+      city: activeDependent.city,
+      attendingClinician: 'Dr. Tunde Adeyemi (Attending Physician)',
+      icd10Code: 'I10 / E11.9',
+      diagnosisTitle: newBillDiagnosis,
+      clinicalNotes:
+        'Detailed patient & hospital bill routed directly to the linked Diaspora Care Sponsor with 100% line-item transparency.',
+      workflowGate: 'pharmacy_dispense_gate',
+      gateStatus: 'locked_awaiting_sponsor',
+      sentToSponsor: true,
+      sentToSponsorName: primarySponsor
+        ? `${primarySponsor.fullName} (${primarySponsor.diasporaLocation})`
+        : 'Diaspora Family Sponsor',
+      patientMessageToSponsor: newBillNoteToSponsor,
+      originalTotalNgn: totalNgn,
+      activePayableNgn: totalNgn,
+      appliedAiFairAdjustment: false,
+      fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
+      payableUsd: totalUsd,
+      status: 'pending_audit',
+      createdAt: new Date().toISOString(),
+      lineItems: newBillItems.map((item, idx) => ({
+        id: `li-cust-${Date.now()}-${idx}`,
+        code: `DOC-${item.category.slice(0, 3).toUpperCase()}-0${idx + 1}`,
+        name: item.name,
+        category: item.category,
+        dosageOrSpec: item.spec,
+        quantity: 1,
+        unitPriceNgn: item.priceNgn,
+        totalNgn: item.priceNgn,
+        benchmarkFairMaxUnitNgn: Math.round(item.priceNgn * 1.05),
+        clinicallyIndicatedForIcd10: ['I10', 'E11.9', 'B50.9'],
+      })),
+    };
+
+    setInvoices((prev) => [createdInvoice, ...prev]);
+    setBillSentBanner(
+      `Bill ${invoiceNum} (₦${totalNgn.toLocaleString()} / $${totalUsd.toFixed(
+        2
+      )} USD) has been sent to ${createdInvoice.sentToSponsorName}!`
+    );
+  }
+
+  // Page 3 Action: Run AI Clinical & Fair-Price Audit
   async function handleRunAiAudit(invoice: MedicalBillInvoice) {
     setAuditingInvoiceId(invoice.id);
     try {
@@ -191,37 +377,22 @@ export default function DocarionCareSponsorApp() {
       if (data.auditReport) {
         const report = data.auditReport;
         setInvoices((prev) =>
-          prev.map((inv) => {
-            if (inv.id !== invoice.id) return inv;
-            return {
-              ...inv,
-              status: inv.status === 'paid_settled' ? 'paid_settled' : 'audited_ready',
-              aiAuditReport: report,
-            };
-          })
+          prev.map((inv) =>
+            inv.id === invoice.id
+              ? {
+                  ...inv,
+                  status: inv.status === 'paid_settled' ? 'paid_settled' : 'audited_ready',
+                  aiAuditReport: report,
+                }
+              : inv
+          )
         );
-
-        logTelemetryEvent({
-          id: `tel-audit-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          endpoint: 'POST /api/ai/audit-bill',
-          method: 'POST',
-          status: 200,
-          summary: `AI Clinical Audit for ${invoice.invoiceNumber}: Trust Score ${report.overallTrustScore}/100 • Savings $${report.savingsUsd.toFixed(2)} USD`,
-          requestPayload: {
-            invoiceNumber: invoice.invoiceNumber,
-            icd10Code: invoice.icd10Code,
-            lineItemsCount: invoice.lineItems.length,
-          },
-          responsePayload: report,
-        });
       }
     } finally {
       setAuditingInvoiceId(null);
     }
   }
 
-  // Apply AI Verified Fair-Price Adjustment
   function handleApplyAiFairAdjustment(invoiceId: string) {
     setInvoices((prev) =>
       prev.map((inv) => {
@@ -238,7 +409,6 @@ export default function DocarionCareSponsorApp() {
     );
   }
 
-  // Open PayPal Checkout for an Invoice
   function openInvoicePayPalModal(invoice: MedicalBillInvoice) {
     const savingsUsd =
       invoice.appliedAiFairAdjustment && invoice.aiAuditReport
@@ -247,8 +417,8 @@ export default function DocarionCareSponsorApp() {
     setPaypalModal({
       isOpen: true,
       mode: 'invoice_settlement',
-      title: `${invoice.diagnosisTitle}`,
-      subtitle: `${invoice.invoiceNumber} • Unlocks ${invoice.workflowGate.replace(/_/g, ' ')}`,
+      title: invoice.diagnosisTitle,
+      subtitle: `${invoice.invoiceNumber} • Direct Settlement to ${invoice.facilityName}`,
       referenceId: invoice.invoiceNumber,
       dependentId: invoice.dependentId,
       dependentName: invoice.dependentName,
@@ -260,7 +430,6 @@ export default function DocarionCareSponsorApp() {
     });
   }
 
-  // Pay an Invoice using the Dependent's Health-Locked Care Wallet
   function handlePayFromHealthLockedWallet(invoice: MedicalBillInvoice) {
     const dep = dependents.find((d) => d.id === invoice.dependentId);
     if (!dep || dep.healthLockedWalletNgn < invoice.activePayableNgn) return;
@@ -296,6 +465,21 @@ export default function DocarionCareSponsorApp() {
       )
     );
 
+    // Also update linked visit prescription dispense status
+    setVisitRecords((prev) =>
+      prev.map((vis) =>
+        vis.linkedInvoiceNumber === invoice.invoiceNumber
+          ? {
+              ...vis,
+              prescriptionsIssued: vis.prescriptionsIssued.map((rx) => ({
+                ...rx,
+                dispenseStatus: 'Dispensed (Paid via Sponsor)',
+              })),
+            }
+          : vis
+      )
+    );
+
     setWalletTxs((prev) => [
       {
         id: `wtx-${Date.now()}`,
@@ -305,14 +489,14 @@ export default function DocarionCareSponsorApp() {
         amountUsd: invoice.payableUsd,
         amountNgn: invoice.activePayableNgn,
         paypalReferenceId: voucherCode,
-        description: `Settled ${invoice.invoiceNumber} at ${invoice.facilityName}`,
+        facilityOrRecipient: invoice.facilityName,
+        description: `Paid ${invoice.invoiceNumber} (${invoice.diagnosisTitle}) from Care Wallet`,
         createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
   }
 
-  // Handle Successful PayPal Checkout Modal Completion
   function handlePayPalModalSuccess(result: {
     orderId: string;
     captureId: string;
@@ -338,6 +522,36 @@ export default function DocarionCareSponsorApp() {
             : inv
         )
       );
+
+      setVisitRecords((prev) =>
+        prev.map((vis) =>
+          vis.linkedInvoiceNumber === paypalModal.referenceId
+            ? {
+                ...vis,
+                prescriptionsIssued: vis.prescriptionsIssued.map((rx) => ({
+                  ...rx,
+                  dispenseStatus: 'Dispensed (Paid via Sponsor)',
+                })),
+              }
+            : vis
+        )
+      );
+
+      setWalletTxs((prev) => [
+        {
+          id: `wtx-${Date.now()}`,
+          dependentId: paypalModal.dependentId,
+          dependentName: paypalModal.dependentName,
+          type: 'paypal_direct_bill',
+          amountUsd: paypalModal.amountUsd,
+          amountNgn: paypalModal.amountNgn,
+          paypalReferenceId: `${result.orderId} (${result.voucherCode})`,
+          facilityOrRecipient: paypalModal.facilityName,
+          description: `PayPal Direct Bill Settlement — ${paypalModal.title}`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
     } else if (paypalModal.mode === 'wallet_topup') {
       setDependents((prev) =>
         prev.map((dep) => {
@@ -361,7 +575,8 @@ export default function DocarionCareSponsorApp() {
           amountUsd: paypalModal.amountUsd,
           amountNgn: paypalModal.amountNgn,
           paypalReferenceId: result.orderId,
-          description: `PayPal Health-Locked Care Wallet Top-Up (${result.voucherCode})`,
+          facilityOrRecipient: `${paypalModal.dependentName} Care Wallet`,
+          description: `PayPal International Care Wallet Top-Up (${result.voucherCode})`,
           createdAt: new Date().toISOString(),
         },
         ...prev,
@@ -388,291 +603,77 @@ export default function DocarionCareSponsorApp() {
           };
         })
       );
+
+      setWalletTxs((prev) => [
+        {
+          id: `wtx-${Date.now()}`,
+          dependentId: paypalModal.dependentId,
+          dependentName: paypalModal.dependentName,
+          type: 'paypal_auto_reload',
+          amountUsd: paypalModal.amountUsd,
+          amountNgn: paypalModal.amountNgn,
+          paypalReferenceId: `I-PAYPAL-SUB-${result.orderId.slice(-6)}`,
+          facilityOrRecipient: `${paypalModal.dependentName} Care Wallet`,
+          description: `Activated Monthly PayPal Auto-Reload Subscription`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
     }
   }
 
-  // African Provider Simulator: Add New Diaspora Care Sponsor
-  function handleAddCareSponsor(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newSponsorName.trim() || !newSponsorEmail.trim()) return;
+  const pendingBillsCount = invoices.filter((i) => i.status !== 'paid_settled').length;
 
-    const newSponsor = {
-      id: `spon-${Date.now()}`,
-      fullName: newSponsorName.trim(),
-      email: newSponsorEmail.trim(),
-      relationship: newSponsorRelation.trim() || 'Family Guarantor',
-      diasporaLocation: newSponsorLocation.trim() || 'Diaspora',
-      preferredCurrency: newSponsorCurrency,
-      paypalPayerEmail: newSponsorEmail.trim(),
-      addedAt: new Date().toISOString().slice(0, 10),
-      isPrimaryGuarantor: false,
-    };
-
-    setDependents((prev) =>
-      prev.map((dep) =>
-        dep.id === simDependentId
-          ? { ...dep, sponsors: [...dep.sponsors, newSponsor] }
-          : dep
-      )
-    );
-
-    const targetDep = dependents.find((d) => d.id === simDependentId);
-    setSponsorAddedBanner(
-      `Added ${newSponsor.fullName} (${newSponsor.diasporaLocation}) as a verified Care Sponsor / Guarantor for ${targetDep?.fullName}!`
-    );
-    setTimeout(() => setSponsorAddedBanner(null), 5000);
-  }
-
-  // African Provider Simulator: Dispatch a New Live Hospital/Pharmacy Bill
-  function handleDispatchSimulatedBill() {
-    const dep = dependents.find((d) => d.id === simDependentId) || dependents[0];
-    const invoiceNum = `DOC-INV-2026-${Math.floor(9100 + Math.random() * 899)}`;
-
-    let newInvoice: MedicalBillInvoice;
-
-    if (simScenarioPreset === 'diabetes_overbilled') {
-      newInvoice = {
-        id: `inv-${Date.now()}`,
-        invoiceNumber: invoiceNum,
-        dependentId: dep.id,
-        dependentName: dep.fullName,
-        docarionPatientId: dep.docarionPatientId,
-        facilityName: dep.primaryFacilityName,
-        facilityType: 'Hospital',
-        city: dep.city,
-        attendingClinician: 'Dr. Ibrahim Musa (Endocrinology Pool)',
-        icd10Code: 'E11.9',
-        diagnosisTitle: 'Type 2 Diabetes Glycemic Review + HbA1c & Metformin Refill',
-        clinicalNotes:
-          'Quarterly diabetes clinic visit. HbA1c lab check, fasting blood glucose, and 60-day Metformin XR + Empagliflozin maintenance refill.',
-        workflowGate: 'pharmacy_dispense_gate',
-        gateStatus: 'locked_awaiting_sponsor',
-        originalTotalNgn: 92000,
-        activePayableNgn: 92000,
-        appliedAiFairAdjustment: false,
-        fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
-        payableUsd: Number((92000 / DEFAULT_FX_NGN_PER_USD).toFixed(2)),
-        status: 'pending_audit',
-        createdAt: new Date().toISOString(),
-        lineItems: [
-          {
-            id: `li-${Date.now()}-1`,
-            code: 'CONS-ENDO-01',
-            name: 'Endocrinology Specialty Clinic Consultation',
-            category: 'consultation',
-            dosageOrSpec: 'Specialist Diabetes Review',
-            quantity: 1,
-            unitPriceNgn: 18000,
-            totalNgn: 18000,
-            benchmarkFairMaxUnitNgn: 19000,
-            clinicallyIndicatedForIcd10: ['E11.9'],
-          },
-          {
-            id: `li-${Date.now()}-2`,
-            code: 'LAB-HBA1C',
-            name: 'Glycated Hemoglobin (HbA1c) + Fasting Blood Glucose',
-            category: 'laboratory',
-            dosageOrSpec: 'Point-of-Care Analyzer (Overbilled 2.2x)',
-            quantity: 1,
-            unitPriceNgn: 28000,
-            totalNgn: 28000,
-            benchmarkFairMaxUnitNgn: 12500,
-            clinicallyIndicatedForIcd10: ['E11.9'],
-          },
-          {
-            id: `li-${Date.now()}-3`,
-            code: 'RX-MET-EMP',
-            name: 'Metformin XR 1000mg + Empagliflozin 10mg (30-Day Pack)',
-            category: 'medication',
-            dosageOrSpec: 'Oral Glycemic Maintenance Pack',
-            quantity: 1,
-            unitPriceNgn: 21000,
-            totalNgn: 21000,
-            benchmarkFairMaxUnitNgn: 22000,
-            clinicallyIndicatedForIcd10: ['E11.9'],
-          },
-          {
-            id: `li-${Date.now()}-4`,
-            code: 'RX-UNIND-STER',
-            name: 'Methylprednisolone 500mg IV High-Dose Corticosteroid',
-            category: 'medication',
-            dosageOrSpec: 'Unindicated IV Steroid (Contraindicated in Hyperglycemia)',
-            quantity: 1,
-            unitPriceNgn: 25000,
-            totalNgn: 25000,
-            benchmarkFairMaxUnitNgn: 18000,
-            clinicallyIndicatedForIcd10: ['M05.9'],
-          },
-        ],
-      };
-    } else if (simScenarioPreset === 'malaria_pharmacy') {
-      newInvoice = {
-        id: `inv-${Date.now()}`,
-        invoiceNumber: invoiceNum,
-        dependentId: dep.id,
-        dependentName: dep.fullName,
-        docarionPatientId: dep.docarionPatientId,
-        facilityName: 'Docarion Central Partner Pharmacy — Victoria Island',
-        facilityType: 'Pharmacy',
-        city: dep.city,
-        attendingClinician: 'Pharm. Chisom Eze (Clinical Pharmacist)',
-        icd10Code: 'I10',
-        diagnosisTitle: '60-Day Essential Hypertension & Lipid Maintenance Refill',
-        clinicalNotes:
-          'Verified e-prescription refill from Docarion EMR chart. 100% compliant with regional pharmacy tariff.',
-        workflowGate: 'pharmacy_dispense_gate',
-        gateStatus: 'locked_awaiting_sponsor',
-        originalTotalNgn: 34000,
-        activePayableNgn: 34000,
-        appliedAiFairAdjustment: false,
-        fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
-        payableUsd: Number((34000 / DEFAULT_FX_NGN_PER_USD).toFixed(2)),
-        status: 'pending_audit',
-        createdAt: new Date().toISOString(),
-        lineItems: [
-          {
-            id: `li-${Date.now()}-1`,
-            code: 'RX-AML-60',
-            name: 'Amlodipine Besylate 10mg + Lisinopril 10mg (60-Day Refill)',
-            category: 'medication',
-            dosageOrSpec: '2-Month Chronic Refill Pack',
-            quantity: 1,
-            unitPriceNgn: 24000,
-            totalNgn: 24000,
-            benchmarkFairMaxUnitNgn: 25500,
-            clinicallyIndicatedForIcd10: ['I10', 'I11.9'],
-          },
-          {
-            id: `li-${Date.now()}-2`,
-            code: 'RX-DELIV-01',
-            name: 'Home Medication Cold-Chain / Verified Doorstep Delivery',
-            category: 'nursing',
-            dosageOrSpec: 'Same-Day Verified Patient Handoff',
-            quantity: 1,
-            unitPriceNgn: 10000,
-            totalNgn: 10000,
-            benchmarkFairMaxUnitNgn: 10500,
-            clinicallyIndicatedForIcd10: ['I10', 'I11.9', 'E11.9'],
-          },
-        ],
-      };
-    } else {
-      newInvoice = {
-        id: `inv-${Date.now()}`,
-        invoiceNumber: invoiceNum,
-        dependentId: dep.id,
-        dependentName: dep.fullName,
-        docarionPatientId: dep.docarionPatientId,
-        facilityName: dep.primaryFacilityName,
-        facilityType: 'Hospital',
-        city: dep.city,
-        attendingClinician: 'Dr. Kemi Olatunji (Emergency Triage Unit)',
-        icd10Code: 'J45.901',
-        diagnosisTitle: 'Acute Bronchospasm / Urgent Nebulization & Pulse Oximetry Observation',
-        clinicalNotes:
-          'Emergency ESI-1 triage exemption active: treatment started immediately without pre-payment block. Post-stabilization bill routed to Diaspora Guarantor.',
-        workflowGate: 'emergency_exempt',
-        gateStatus: 'emergency_bypassed',
-        isEmergencyTriage: true,
-        originalTotalNgn: 45000,
-        activePayableNgn: 45000,
-        appliedAiFairAdjustment: false,
-        fxRateNgnPerUsd: DEFAULT_FX_NGN_PER_USD,
-        payableUsd: Number((45000 / DEFAULT_FX_NGN_PER_USD).toFixed(2)),
-        status: 'pending_audit',
-        createdAt: new Date().toISOString(),
-        lineItems: [
-          {
-            id: `li-${Date.now()}-1`,
-            code: 'ER-NEB-01',
-            name: 'Emergency Salbutamol + Ipratropium Nebulization & Oxygen',
-            category: 'inpatient',
-            dosageOrSpec: 'Immediate Emergency Stabilization (Gate Bypassed)',
-            quantity: 1,
-            unitPriceNgn: 28000,
-            totalNgn: 28000,
-            benchmarkFairMaxUnitNgn: 30000,
-            clinicallyIndicatedForIcd10: ['J45.901'],
-          },
-          {
-            id: `li-${Date.now()}-2`,
-            code: 'RX-INHALER',
-            name: 'Budesonide/Formoterol Maintenance Inhaler (120 Doses)',
-            category: 'medication',
-            dosageOrSpec: 'Discharge Controller Inhaler',
-            quantity: 1,
-            unitPriceNgn: 17000,
-            totalNgn: 17000,
-            benchmarkFairMaxUnitNgn: 18500,
-            clinicallyIndicatedForIcd10: ['J45.901'],
-          },
-        ],
-      };
-    }
-
-    setInvoices((prev) => [newInvoice, ...prev]);
-    setDispatchedBillBanner(
-      `Dispatched ${newInvoice.invoiceNumber} (${newInvoice.diagnosisTitle}) for ${dep.fullName} directly to the Diaspora Care Sponsor Hub!`
-    );
-    setTimeout(() => setDispatchedBillBanner(null), 6000);
-  }
-
-  // Send AI Copilot Message
-  async function handleSendCopilotMessage(promptOverride?: string) {
-    const textToSend = (promptOverride ?? chatInput).trim();
-    if (!textToSend || chatLoading) return;
-
-    const userMsg: ChatMessage = {
-      id: `msg-u-${Date.now()}`,
-      sender: 'user',
-      text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setChatMessages((prev) => [...prev, userMsg]);
-    if (!promptOverride) setChatInput('');
-    setChatLoading(true);
-
-    try {
-      const res = await fetch('/api/ai/copilot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: textToSend,
-          dependents,
-          invoices,
-        }),
-      });
-      const data = await res.json();
-
-      const aiMsg: ChatMessage = {
-        id: `msg-ai-${Date.now()}`,
-        sender: 'ai',
-        text: data.replyText || 'I have analyzed your Family Care Circle.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionCard: data.suggestedAction || null,
-      };
-      setChatMessages((prev) => [...prev, aiMsg]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
-  // Metrics for Hero Summary Bar
-  const pendingInvoicesCount = invoices.filter((i) => i.status !== 'paid_settled').length;
-  const totalWalletUsd = dependents.reduce(
-    (sum, d) => sum + d.healthLockedWalletUsdEquivalent,
-    0
-  );
-  const totalAiSavingsUsd = invoices.reduce(
-    (sum, i) => sum + (i.aiAuditReport?.savingsUsd || 0),
-    0
-  );
-
-  const filteredInvoices =
-    selectedDependentFilter === 'ALL'
-      ? invoices
-      : invoices.filter((inv) => inv.dependentId === selectedDependentFilter);
+  const journeyPages: {
+    id: JourneyPage;
+    stepNum: string;
+    roleBadge: 'PATIENT IN AFRICA' | 'FAMILY SPONSOR ABROAD';
+    title: string;
+    subtitle: string;
+  }[] = [
+    {
+      id: '1_patient_dashboard',
+      stepNum: 'Page 1',
+      roleBadge: 'PATIENT IN AFRICA',
+      title: 'Patient Dashboard: Invite Sponsor & Send Bill',
+      subtitle: 'Add family abroad & forward itemized bills',
+    },
+    {
+      id: '2_sponsor_invitation',
+      stepNum: 'Page 2',
+      roleBadge: 'FAMILY SPONSOR ABROAD',
+      title: 'Sponsor Invitation & Acceptance',
+      subtitle: 'What the family member abroad receives & accepts',
+    },
+    {
+      id: '3_sponsor_bills',
+      stepNum: 'Page 3',
+      roleBadge: 'FAMILY SPONSOR ABROAD',
+      title: 'Detailed Bills & PayPal Checkout',
+      subtitle: `${pendingBillsCount} itemized bill(s) • 0% hidden fees`,
+    },
+    {
+      id: '4_sponsor_wallet',
+      stepNum: 'Page 4',
+      roleBadge: 'FAMILY SPONSOR ABROAD',
+      title: 'Fund Care Wallet (PayPal)',
+      subtitle: 'Top up medication & consultation wallet',
+    },
+    {
+      id: '5_sponsor_visit_records',
+      stepNum: 'Page 5',
+      roleBadge: 'FAMILY SPONSOR ABROAD',
+      title: 'Patient Visit Records & Rx',
+      subtitle: 'Doctor notes, vitals, labs & prescriptions',
+    },
+    {
+      id: '6_sponsor_transactions',
+      stepNum: 'Page 6',
+      roleBadge: 'FAMILY SPONSOR ABROAD',
+      title: 'Transactions & Receipts',
+      subtitle: 'Full PayPal & wallet settlement history',
+    },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col bg-[#040B14] text-slate-100">
@@ -684,19 +685,35 @@ export default function DocarionCareSponsorApp() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-extrabold tracking-tight text-white">
-                  Docarion <span className="text-emerald-400">CareSponsor AI</span>
+                  Docarion <span className="text-emerald-400">CareSponsor</span>
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#FFC439]/15 text-[#FFC439] border border-[#FFC439]/30">
-                  PayPal Orders v2 + Clinical AI
+                  Powered by PayPal + Clinical AI
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Cross-Border Diaspora Healthcare Guarantor, AI Bill Auditor & Health-Locked Care Wallet
+                Connect Family Abroad to African Healthcare • 100% Transparent Bills, Visit Records & Instant PayPal Care Wallet
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Active Patient Selector */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1">
+              <span className="text-[11px] text-slate-400">Patient:</span>
+              <select
+                value={activeDependentId}
+                onChange={(e) => setActiveDependentId(e.target.value)}
+                className="bg-transparent text-xs font-bold text-emerald-400 focus:outline-none"
+              >
+                {dependents.map((d) => (
+                  <option key={d.id} value={d.id} className="bg-slate-900 text-white">
+                    {d.fullName} ({d.city})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Diaspora Currency Switcher */}
             <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-1">
               {(['USD', 'GBP', 'EUR', 'CAD'] as DiasporaCurrency[]).map((curr) => (
@@ -714,59 +731,55 @@ export default function DocarionCareSponsorApp() {
               ))}
             </div>
 
-            {/* PayPal Sandbox Client ID Config Button */}
+            {/* PayPal Sandbox Keys Drawer Button */}
             <button
               onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 transition"
-              title="Configure Live PayPal Sandbox Client ID"
             >
               <Settings className="w-3.5 h-3.5 text-[#FFC439]" />
-              <span className="hidden md:inline">PayPal Sandbox Keys</span>
+              <span>PayPal Keys</span>
             </button>
 
-            {/* Reset Demo State */}
             <button
               onClick={resetDemoState}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-400 hover:text-white transition"
-              title="Reset Demo State"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset Demo</span>
+              <span className="hidden md:inline">Reset</span>
             </button>
           </div>
         </div>
 
         {/* Collapsible PayPal Sandbox Credentials Drawer */}
         {showSettingsDrawer && (
-          <div className="border-t border-slate-800 bg-slate-950/95 px-4 sm:px-6 py-3">
+          <div className="border-t border-slate-800 bg-slate-950 px-4 sm:px-6 py-3">
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="text-xs text-slate-300">
-                <strong className="text-[#FFC439]">Live PayPal Developer Sandbox Mode:</strong>{' '}
-                Paste your <code className="text-emerald-400">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{' '}
-                from{' '}
+                <strong className="text-[#FFC439]">PayPal Developer Sandbox Key:</strong> Paste
+                your <code className="text-emerald-400">Client ID</code> from{' '}
                 <a
                   href="https://developer.paypal.com/dashboard/applications/sandbox"
                   target="_blank"
                   rel="noreferrer"
                   className="underline text-blue-400 hover:text-blue-300"
                 >
-                  developer.paypal.com
+                  developer.paypal.com/dashboard/applications/sandbox
                 </a>{' '}
-                (or leave default <code className="text-slate-400">test</code> to use built-in Sandbox mode).
+                (or leave blank to use built-in Sandbox mode).
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <input
                   type="text"
-                  placeholder="PayPal Sandbox Client ID (optional)"
+                  placeholder="Paste PayPal Sandbox Client ID..."
                   value={customPayPalClientId}
                   onChange={(e) => setCustomPayPalClientId(e.target.value)}
-                  className="w-full sm:w-72 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+                  className="w-full sm:w-80 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
                 />
                 <button
                   onClick={() => setShowSettingsDrawer(false)}
                   className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white"
                 >
-                  Save
+                  Apply Key
                 </button>
               </div>
             </div>
@@ -774,172 +787,674 @@ export default function DocarionCareSponsorApp() {
         )}
       </header>
 
-      {/* Main Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Executive Diaspora Guarantor KPI Banner */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/60 border border-slate-800 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Family Care Circle (Africa)</p>
-              <p className="text-2xl font-black text-white mt-1">
-                {dependents.length} Dependents
-              </p>
-              <p className="text-[11px] text-emerald-400 mt-0.5">
-                Auto-routed across Docarion EMR
-              </p>
-            </div>
-            <div className="h-11 w-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <HeartHandshake className="w-6 h-6" />
-            </div>
+      {/* =====================================================================
+          STEP-BY-STEP PAGE NAVIGATION BAR (6 CLEAR PAGES)
+         ===================================================================== */}
+      <div className="bg-slate-950/90 border-b border-slate-800/90">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+              Interactive Page-by-Page Walkthrough (Click Any Page Below to See What Each Person Sees):
+            </span>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">
+              Patient in Africa (Page 1) → Family Sponsor Abroad (Pages 2–6)
+            </span>
           </div>
-
-          <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/60 border border-slate-800 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Pending Provider Bills</p>
-              <p className="text-2xl font-black text-amber-400 mt-1">
-                {pendingInvoicesCount} Active
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Hospitals, Pharmacies & Labs
-              </p>
-            </div>
-            <div className="h-11 w-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <FileCheck2 className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/60 border border-slate-800 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">AI Overbilling Protection</p>
-              <p className="text-2xl font-black text-emerald-400 mt-1">
-                {formatDiasporaCurrency(totalAiSavingsUsd > 0 ? totalAiSavingsUsd : 34.88)}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Saved via ICD-10 & Tariff Audit
-              </p>
-            </div>
-            <div className="h-11 w-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
-              <Sparkles className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-gradient-to-br from-[#003087]/50 to-slate-900 border border-blue-500/30 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-blue-200 font-medium">Health-Locked Care Wallets</p>
-              <p className="text-2xl font-black text-[#FFC439] mt-1">
-                {formatDiasporaCurrency(totalWalletUsd)}
-              </p>
-              <p className="text-[11px] text-blue-300 mt-0.5">
-                ₦{(totalWalletUsd * DEFAULT_FX_NGN_PER_USD).toLocaleString()} NGN Protected
-              </p>
-            </div>
-            <div className="h-11 w-11 rounded-xl bg-[#FFC439]/20 border border-[#FFC439]/40 flex items-center justify-center text-[#FFC439]">
-              <Wallet className="w-6 h-6" />
-            </div>
-          </div>
-        </section>
-
-        {/* Primary 4-Mode Navigation Tabs */}
-        <nav className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
-          <button
-            onClick={() => setActiveTab('sponsor_hub')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition ${
-              activeTab === 'sponsor_hub'
-                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-            <span>1. Diaspora Care Sponsor Hub</span>
-            {pendingInvoicesCount > 0 && (
-              <span className="ml-1 px-2 py-0.5 text-[11px] rounded-full bg-black/30 text-amber-300">
-                {pendingInvoicesCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('care_wallet')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition ${
-              activeTab === 'care_wallet'
-                ? 'bg-[#0070BA] text-white shadow-lg shadow-blue-900/40'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Wallet className="w-4 h-4" />
-            <span>2. Health-Locked Care Wallet & Auto-Reload</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('facility_simulator')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition ${
-              activeTab === 'facility_simulator'
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>3. African Provider & Guarantor Simulator</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('ai_copilot')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition ${
-              activeTab === 'ai_copilot'
-                ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-900/40'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Bot className="w-4 h-4" />
-            <span>4. CareSponsor AI Copilot & PayPal Inspector</span>
-          </button>
-        </nav>
-
-        {/* =====================================================================
-            TAB 1: DIASPORA CARE SPONSOR HUB (AI BILL AUDITOR + PAYPAL CHECKOUT)
-           ===================================================================== */}
-        {activeTab === 'sponsor_hub' && (
-          <div className="space-y-6">
-            {/* Family Care Circle Filter Pills */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">
-                  Family Care Circle:
-                </span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {journeyPages.map((p) => {
+              const isActive = currentPage === p.id;
+              const isPatientPage = p.roleBadge === 'PATIENT IN AFRICA';
+              return (
                 <button
-                  onClick={() => setSelectedDependentFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    selectedDependentFilter === 'ALL'
-                      ? 'bg-emerald-500 text-slate-950'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  key={p.id}
+                  onClick={() => setCurrentPage(p.id)}
+                  className={`text-left rounded-xl p-2.5 border transition flex flex-col justify-between ${
+                    isActive
+                      ? isPatientPage
+                        ? 'bg-emerald-950/80 border-emerald-400 shadow-lg shadow-emerald-950/50'
+                        : 'bg-[#003087]/80 border-[#FFC439] shadow-lg shadow-blue-950/50'
+                      : 'bg-slate-900/70 border-slate-800 hover:border-slate-600'
                   }`}
                 >
-                  All Family Members ({dependents.length})
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span
+                      className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                        isActive
+                          ? 'bg-white text-slate-950'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {p.stepNum}
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                        isPatientPage
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-blue-500/20 text-blue-300'
+                      }`}
+                    >
+                      {isPatientPage ? '🇳🇬 Patient' : '🌍 Sponsor'}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white leading-snug">
+                      {p.title}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                      {p.subtitle}
+                    </div>
+                  </div>
                 </button>
-                {dependents.map((dep) => (
-                  <button
-                    key={dep.id}
-                    onClick={() => setSelectedDependentFilter(dep.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      selectedDependentFilter === dep.id
-                        ? 'bg-emerald-500 text-slate-950'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>{dep.fullName}</span>
-                    <span className="text-[10px] opacity-75">({dep.relationshipToSponsor})</span>
-                  </button>
-                ))}
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Page View Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* =====================================================================
+            PAGE 1: PATIENT DASHBOARD IN AFRICA (INVITE SPONSOR & SEND BILL)
+           ===================================================================== */}
+        {currentPage === '1_patient_dashboard' && (
+          <div className="space-y-6">
+            {/* Page 1 Role Banner */}
+            <div className="rounded-2xl bg-gradient-to-r from-emerald-950/90 via-slate-900 to-slate-900 border border-emerald-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  🇳🇬 Page 1 • Patient View in Africa (Docarion Patient App)
+                </span>
+                <h2 className="text-xl font-extrabold text-white">
+                  Welcome, {activeDependent.fullName} ({activeDependent.docarionPatientId})
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300">
+                  Primary Hospital: <strong>{activeDependent.primaryFacilityName}</strong> ({activeDependent.city}) •
+                  Care Wallet Balance:{' '}
+                  <strong className="text-emerald-400">
+                    ₦{activeDependent.healthLockedWalletNgn.toLocaleString()} NGN
+                  </strong>
+                </p>
               </div>
-              <div className="text-xs text-slate-400">
-                Guarantor:{' '}
-                <strong className="text-white">Dr. Chidi Okafor (Houston, TX)</strong>
+              <button
+                onClick={() => setCurrentPage('2_sponsor_invitation')}
+                className="px-4 py-2.5 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-extrabold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition"
+              >
+                <span>Next: See What Family Member Abroad Receives (Page 2)</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* LEFT COLUMN: Add / Invite Family Member Abroad as Care Sponsor */}
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">
+                      1. Invite a Family Member Abroad as Your Care Sponsor
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Link your son, daughter, sibling, or relative in the diaspora so they can
+                      fund your Care Wallet or pay your hospital & pharmacy bills via PayPal.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSendSponsorInvitation} className="space-y-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        Family Member&apos;s Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        Relationship to You
+                      </label>
+                      <input
+                        type="text"
+                        value={inviteRelationship}
+                        onChange={(e) => setInviteRelationship(e.target.value)}
+                        placeholder="e.g. Son, Daughter, Brother, Sister"
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        Email Address (For Invite & PayPal)
+                      </label>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white font-mono"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        WhatsApp / International Phone
+                      </label>
+                      <input
+                        type="text"
+                        value={invitePhone}
+                        onChange={(e) => setInvitePhone(e.target.value)}
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        City & Country Abroad
+                      </label>
+                      <input
+                        type="text"
+                        value={inviteLocation}
+                        onChange={(e) => setInviteLocation(e.target.value)}
+                        placeholder="e.g. Houston, TX / London, UK / Toronto, CA"
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">
+                        Their Currency
+                      </label>
+                      <select
+                        value={inviteCurrency}
+                        onChange={(e) =>
+                          setInviteCurrency(e.target.value as DiasporaCurrency)
+                        }
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white font-bold"
+                      >
+                        <option value="USD">USD ($)</option>
+                        <option value="GBP">GBP (£)</option>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="CAD">CAD (CA$)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Sponsor Permissions Checkboxes */}
+                  <div className="rounded-xl bg-slate-950 border border-slate-800 p-3 space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                      What Can This Family Sponsor See & Do?
+                    </span>
+                    <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={permBills}
+                        onChange={(e) => setPermBills(e.target.checked)}
+                        className="rounded text-emerald-500"
+                      />
+                      <span>
+                        Receive my itemized hospital, laboratory & pharmacy bills automatically
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={permWallet}
+                        onChange={(e) => setPermWallet(e.target.checked)}
+                        className="rounded text-emerald-500"
+                      />
+                      <span>
+                        Fund my Docarion Care Wallet via PayPal for medications & visits
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={permRecords}
+                        onChange={(e) => setPermRecords(e.target.checked)}
+                        className="rounded text-emerald-500"
+                      />
+                      <span>
+                        View my doctor visit summaries, diagnoses, and active prescriptions
+                      </span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span>Send Care Sponsor Invitation to Family Member Abroad</span>
+                  </button>
+                </form>
+
+                {/* Current Linked Sponsors List */}
+                <div className="pt-3 border-t border-slate-800 space-y-2.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Your Linked Family Care Sponsors ({activeDependent.sponsors.length}):
+                  </span>
+                  {activeDependent.sponsors.map((sp) => (
+                    <div
+                      key={sp.id}
+                      className="rounded-xl bg-slate-950 border border-slate-800 p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{sp.fullName}</span>
+                          <span className="text-emerald-400 font-medium">
+                            ({sp.relationship})
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              sp.invitationStatus === 'accepted_active'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}
+                          >
+                            {sp.invitationStatus === 'accepted_active'
+                              ? '✅ Active Sponsor'
+                              : '⏳ Invite Sent (Pending Acceptance)'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {sp.diasporaLocation} • {sp.email} • Invite Code:{' '}
+                          <code className="text-slate-300">{sp.inviteToken}</code>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText(
+                              `${window.location.origin}/?invite=${sp.inviteToken}`
+                            );
+                            setCopiedToken(sp.inviteToken);
+                            setTimeout(() => setCopiedToken(null), 2500);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold flex items-center gap-1"
+                        >
+                          {copiedToken === sp.inviteToken ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveInviteSponsor(sp);
+                            setCurrentPage('2_sponsor_invitation');
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#0070BA] hover:bg-[#005ea6] text-white text-[11px] font-bold flex items-center gap-1"
+                        >
+                          <span>View Invite Page</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: Patient Detailed Bill Builder & Forwarder */}
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">
+                      2. Send a Detailed Medical Bill to Your Sponsor Abroad
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Every consultation, lab test, and medication is itemized transparently so
+                      your family member abroad sees zero hidden charges.
+                    </p>
+                  </div>
+                </div>
+
+                {billSentBanner && (
+                  <div className="rounded-xl bg-emerald-500/20 border border-emerald-500/40 p-3 text-xs text-emerald-200 font-semibold flex items-center justify-between gap-2">
+                    <span>{billSentBanner}</span>
+                    <button
+                      onClick={() => setCurrentPage('3_sponsor_bills')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-extrabold shrink-0"
+                    >
+                      See Bill in Sponsor View (Page 3) →
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Visit Reason / Diagnosis Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newBillDiagnosis}
+                      onChange={(e) => setNewBillDiagnosis(e.target.value)}
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Personal Note to Your Family Sponsor Abroad
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={newBillNoteToSponsor}
+                      onChange={(e) => setNewBillNoteToSponsor(e.target.value)}
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
+                    />
+                  </div>
+
+                  {/* Itemized Line Items in Bill */}
+                  <div className="rounded-xl bg-slate-950 border border-slate-800 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Itemized Hospital, Lab & Medication Charges:
+                      </span>
+                      <span className="text-xs font-bold text-emerald-400">
+                        Total: ₦
+                        {newBillItems
+                          .reduce((s, i) => s + i.priceNgn, 0)
+                          .toLocaleString()}{' '}
+                        NGN (≈{' '}
+                        {formatDiasporaCurrency(
+                          newBillItems.reduce((s, i) => s + i.priceNgn, 0) /
+                            DEFAULT_FX_NGN_PER_USD
+                        )}
+                        )
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-slate-800/80">
+                      {newBillItems.map((item, index) => (
+                        <div
+                          key={index}
+                          className="py-2 flex items-center justify-between gap-2"
+                        >
+                          <div>
+                            <span className="font-bold text-white">{item.name}</span>
+                            <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                              {item.category}
+                            </span>
+                            <p className="text-[11px] text-slate-400">{item.spec}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-200">
+                              ₦{item.priceNgn.toLocaleString()}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setNewBillItems((prev) =>
+                                  prev.filter((_, i) => i !== index)
+                                )
+                              }
+                              className="text-slate-500 hover:text-rose-400 text-xs px-1"
+                              title="Remove item"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add Another Custom Item Row */}
+                    <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add medication, lab test, or service..."
+                        value={customItemName}
+                        onChange={(e) => setCustomItemName(e.target.value)}
+                        className="sm:col-span-5 rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-white text-xs"
+                      />
+                      <select
+                        value={customItemCategory}
+                        onChange={(e) =>
+                          setCustomItemCategory(e.target.value as BillCategory)
+                        }
+                        className="sm:col-span-3 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-white text-xs"
+                      >
+                        <option value="medication">Medication</option>
+                        <option value="laboratory">Lab Test</option>
+                        <option value="consultation">Consultation</option>
+                      </select>
+                      <input
+                        type="number"
+                        placeholder="₦ NGN"
+                        value={customItemPriceNgn}
+                        onChange={(e) => setCustomItemPriceNgn(e.target.value)}
+                        className="sm:col-span-2 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-white text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddLineItemToDraft}
+                        className="sm:col-span-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs py-1.5"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePatientSendDetailedBill}
+                    className="w-full py-3 rounded-xl bg-[#0070BA] hover:bg-[#005ea6] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>
+                      Send Detailed Itemized Bill to My Care Sponsor Abroad
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================================
+            PAGE 2: WHAT THE FAMILY MEMBER ABROAD SEES — INVITATION & ACCEPTANCE
+           ===================================================================== */}
+        {currentPage === '2_sponsor_invitation' && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-700/80 shadow-2xl overflow-hidden">
+              {/* Top Invitation Header */}
+              <div className="bg-gradient-to-r from-[#003087] via-emerald-950 to-slate-950 p-6 sm:p-8 border-b border-slate-800">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/10 text-emerald-300 border border-emerald-400/30">
+                    ✉️ Page 2 • What the Family Member Abroad Sees
+                  </span>
+                  <span className="text-xs font-mono text-blue-200">
+                    Invite Token: {pendingSponsorInvite?.inviteToken || 'INV-DAUGHTER-9021'}
+                  </span>
+                </div>
+
+                <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
+                  {activeDependent.fullName} has invited you to be her{' '}
+                  <span className="text-[#FFC439]">Healthcare Sponsor</span> on Docarion
+                </h2>
+                <p className="text-sm text-blue-100 mt-2">
+                  Invited Sponsor:{' '}
+                  <strong className="text-white">
+                    {pendingSponsorInvite?.fullName} ({pendingSponsorInvite?.relationship} •{' '}
+                    {pendingSponsorInvite?.diasporaLocation})
+                  </strong>
+                </p>
+              </div>
+
+              {/* Invitation Details Body */}
+              <div className="p-6 sm:p-8 space-y-6">
+                {/* Patient & Hospital Card */}
+                <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="text-slate-400 block">Patient in Africa</span>
+                    <strong className="text-white text-sm block mt-0.5">
+                      {activeDependent.fullName} ({activeDependent.age} yrs)
+                    </strong>
+                    <span className="text-emerald-400 font-mono">
+                      ID: {activeDependent.docarionPatientId}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Registered Hospital & Pharmacy</span>
+                    <strong className="text-white text-sm block mt-0.5">
+                      {activeDependent.primaryFacilityName}
+                    </strong>
+                    <span className="text-slate-400">{activeDependent.city}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Ongoing Care Conditions</span>
+                    <strong className="text-white text-xs block mt-0.5">
+                      {activeDependent.chronicConditions.join(' • ')}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Why This Matters: 3 Clear Promises to the Diaspora Sponsor */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-300">
+                    What Accepting This Invitation Allows You to Do:
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
+                      <div className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <h4 className="font-bold text-white text-sm">
+                        1. Zero Hidden Prices
+                      </h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        See every consultation, lab test, and medication itemized line-by-line
+                        from the hospital, verified by Docarion Clinical AI against overbilling.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
+                      <div className="h-9 w-9 rounded-xl bg-[#FFC439]/15 text-[#FFC439] flex items-center justify-center">
+                        <Wallet className="w-5 h-5" />
+                      </div>
+                      <h4 className="font-bold text-white text-sm">
+                        2. Pay or Fund via PayPal
+                      </h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Pay specific hospital/pharmacy bills or fund her health-locked Care
+                        Wallet in {pendingSponsorInvite?.preferredCurrency || 'USD'} using PayPal.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
+                      <div className="h-9 w-9 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                        <Stethoscope className="w-5 h-5" />
+                      </div>
+                      <h4 className="font-bold text-white text-sm">
+                        3. Full Visit & Rx Records
+                      </h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Follow her doctor visits, blood pressure & blood sugar readings, lab
+                        results, and monthly medication refills in real time.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transparent FX & Fee Disclosure Box */}
+                <div className="rounded-2xl bg-emerald-950/30 border border-emerald-500/30 p-4 flex items-start gap-3 text-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-slate-200">
+                    <strong className="text-white block">
+                      Docarion Transparent Pricing & Health-Lock Guarantee:
+                    </strong>
+                    <span>
+                      You always see the exact local Nigerian Naira (₦ NGN) hospital tariff
+                      alongside your PayPal currency ({selectedCurrency}) at the guaranteed rate
+                      of <strong>$1.00 USD = ₦1,620 NGN</strong> with <strong>$0 hidden markups</strong>.
+                      Funds go 100% toward verified healthcare and medications.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Accept Invitation Button */}
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <button
+                    onClick={() => setCurrentPage('1_patient_dashboard')}
+                    className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition"
+                  >
+                    ← Back to Patient View (Page 1)
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      handleAcceptSponsorInvitation(
+                        pendingSponsorInvite?.id || 'spon-2'
+                      )
+                    }
+                    className="w-full sm:flex-1 py-3.5 px-6 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-sm flex items-center justify-center gap-2 shadow-xl transition"
+                  >
+                    <UserCheck className="w-5 h-5" />
+                    <span>
+                      Accept Care Sponsor Invitation & Open Sponsor Portal (Page 3) →
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================================
+            PAGE 3: FAMILY SPONSOR VIEW — DETAILED BILLS & PAYPAL CHECKOUT
+           ===================================================================== */}
+        {currentPage === '3_sponsor_bills' && (
+          <div className="space-y-6">
+            {/* Sponsor Bills Header */}
+            <div className="rounded-2xl bg-gradient-to-r from-[#003087]/80 via-slate-900 to-slate-900 border border-blue-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#FFC439]/20 text-[#FFC439] border border-[#FFC439]/30">
+                  🌍 Page 3 • Family Member Abroad View (Detailed Bills & Transparent PayPal Payment)
+                </span>
+                <h2 className="text-xl font-extrabold text-white">
+                  Itemized Medical Bills & Prescriptions for Your Family
+                </h2>
+                <p className="text-xs sm:text-sm text-blue-100">
+                  Every charge is itemized line-by-line directly from the Docarion hospital or
+                  pharmacy. Run the <strong>AI Fair-Price Check</strong> before paying with PayPal.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage('4_sponsor_wallet')}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Go to Page 4: Fund Care Wallet →</span>
+                </button>
               </div>
             </div>
 
-            {/* Invoices List */}
-            <div className="space-y-5">
-              {filteredInvoices.map((inv) => {
+            {/* Detailed Bills List */}
+            <div className="space-y-6">
+              {invoices.map((inv) => {
                 const dependent = dependents.find((d) => d.id === inv.dependentId);
                 const isPaid = inv.status === 'paid_settled';
                 const audit = inv.aiAuditReport;
@@ -950,57 +1465,47 @@ export default function DocarionCareSponsorApp() {
                     className={`rounded-2xl border transition overflow-hidden ${
                       isPaid
                         ? 'bg-slate-900/50 border-emerald-500/40'
-                        : 'bg-slate-900/90 border-slate-700/90 shadow-xl'
+                        : 'bg-slate-900 border-slate-700 shadow-xl'
                     }`}
                   >
-                    {/* Top Invoice Banner */}
-                    <div className="px-5 py-4 bg-slate-950/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    {/* Top Bill Header */}
+                    <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
-                            {inv.invoiceNumber}
+                          <span className="font-mono text-xs px-2.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            Bill #{inv.invoiceNumber}
                           </span>
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                            ICD-10: {inv.icd10Code}
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                            Diagnosis Code: {inv.icd10Code}
                           </span>
                           {isPaid ? (
                             <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                               <Unlock className="w-3.5 h-3.5" />
-                              Gate Unlocked • Paid ({inv.docarionVoucherCode})
-                            </span>
-                          ) : inv.isEmergencyTriage ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                              ⚡ Emergency ESI-1 Exemption (Care Started Immediately)
+                              Paid & Released for Patient ({inv.docarionVoucherCode})
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
                               <Lock className="w-3.5 h-3.5" />
-                              {inv.workflowGate === 'pharmacy_dispense_gate'
-                                ? 'Pharmacy Dispensation Gate Locked — Awaiting Guarantor'
-                                : inv.workflowGate === 'pre_consultation_gate'
-                                ? 'Pre-Consultation Specialty Gate Locked'
-                                : 'Pre-Booking Clinic Gate Locked'}
+                              Awaiting Sponsor Payment to Release Medications / Care
                             </span>
                           )}
                         </div>
-                        <h3 className="text-base sm:text-lg font-extrabold text-white">
+                        <h3 className="text-lg font-extrabold text-white">
                           {inv.dependentName} — {inv.diagnosisTitle}
                         </h3>
-                        <p className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
-                          <span className="flex items-center gap-1 text-slate-300 font-medium">
-                            <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <p className="text-xs text-slate-400">
+                          Hospital / Provider:{' '}
+                          <strong className="text-slate-200">
                             {inv.facilityName} ({inv.city})
-                          </span>
-                          <span>•</span>
-                          <span>Attending: {inv.attendingClinician}</span>
+                          </strong>{' '}
+                          • Doctor: {inv.attendingClinician}
                         </p>
                       </div>
 
-                      {/* Price Display */}
                       <div className="text-right">
                         {inv.appliedAiFairAdjustment && (
                           <p className="text-xs text-slate-500 line-through font-mono">
-                            Original: ₦{inv.originalTotalNgn.toLocaleString()} (
+                            Billed before AI Audit: ₦{inv.originalTotalNgn.toLocaleString()} (
                             {formatDiasporaCurrency(
                               inv.originalTotalNgn / inv.fxRateNgnPerUsd
                             )}
@@ -1011,197 +1516,181 @@ export default function DocarionCareSponsorApp() {
                           {formatDiasporaCurrency(inv.payableUsd)}
                         </div>
                         <p className="text-xs font-mono text-slate-400">
-                          ₦{inv.activePayableNgn.toLocaleString()} NGN Local Settlement
+                          Exact Facility Amount: ₦{inv.activePayableNgn.toLocaleString()} NGN
                         </p>
                       </div>
                     </div>
 
-                    {/* Body */}
-                    <div className="p-5 space-y-5">
-                      {/* Clinical Encounter Note */}
-                      <div className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3.5 text-xs text-slate-300">
-                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px] block mb-1">
-                          Provider Clinical Summary (Routed from Docarion EMR):
-                        </span>
-                        {inv.clinicalNotes}
-                      </div>
-
-                      {/* Itemized Line Items Table */}
-                      <div className="overflow-x-auto rounded-xl border border-slate-800">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                              <th className="py-2.5 px-3 font-semibold">Care Item / Medication / Lab</th>
-                              <th className="py-2.5 px-3 font-semibold">Category</th>
-                              <th className="py-2.5 px-3 font-semibold text-right">Billed (NGN)</th>
-                              <th className="py-2.5 px-3 font-semibold text-right">Fair Tariff Benchmark</th>
-                              <th className="py-2.5 px-3 font-semibold">AI Clinical & Tariff Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800/70">
-                            {inv.lineItems.map((item) => {
-                              const finding = audit?.lineFindings.find(
-                                (f) => f.itemId === item.id
-                              );
-                              return (
-                                <tr key={item.id} className="hover:bg-slate-800/30">
-                                  <td className="py-3 px-3">
-                                    <div className="font-bold text-white">{item.name}</div>
-                                    <div className="text-[11px] text-slate-400">
-                                      {item.dosageOrSpec} • Code:{' '}
-                                      <code className="text-slate-300">{item.code}</code>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-3 capitalize text-slate-300">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-[11px]">
-                                      {item.category === 'medication' && (
-                                        <Pill className="w-3 h-3 text-emerald-400" />
-                                      )}
-                                      {item.category === 'laboratory' && (
-                                        <FlaskConical className="w-3 h-3 text-blue-400" />
-                                      )}
-                                      {item.category === 'consultation' && (
-                                        <Stethoscope className="w-3 h-3 text-purple-400" />
-                                      )}
-                                      {item.category}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-3 text-right font-mono font-semibold text-slate-200">
-                                    ₦{item.totalNgn.toLocaleString()}
-                                  </td>
-                                  <td className="py-3 px-3 text-right font-mono text-slate-400">
-                                    {item.benchmarkFairMaxUnitNgn > 0
-                                      ? `≤ ₦${(
-                                          item.benchmarkFairMaxUnitNgn * item.quantity
-                                        ).toLocaleString()}`
-                                      : '₦0 (Exempt)'}
-                                  </td>
-                                  <td className="py-3 px-3">
-                                    {!finding ? (
-                                      <span className="text-slate-500 italic">
-                                        Click &ldquo;Run AI Clinical Audit&rdquo; below
-                                      </span>
-                                    ) : finding.flag === 'verified' ? (
-                                      <div className="space-y-0.5">
-                                        <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
-                                          <CheckCircle2 className="w-3.5 h-3.5" />
-                                          Verified Appropriate
-                                        </span>
-                                        <p className="text-[11px] text-slate-400">
-                                          {finding.clinicalRationale}
-                                        </p>
-                                      </div>
-                                    ) : (
-                                      <div className="space-y-0.5">
-                                        <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
-                                          <AlertTriangle className="w-3.5 h-3.5" />
-                                          {finding.flag === 'overpriced'
-                                            ? `Overbilled (Fair: ₦${finding.recommendedFairNgn.toLocaleString()})`
-                                            : 'Unindicated / Duplicate (₦0)'}
-                                        </span>
-                                        <p className="text-[11px] text-amber-200/90">
-                                          {finding.clinicalRationale}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* AI Clinical & Fair-Price Audit Report Card */}
-                      {audit && (
-                        <div className="rounded-2xl bg-gradient-to-br from-purple-950/40 via-slate-900 to-emerald-950/30 border border-purple-500/40 p-4 space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="w-5 h-5 text-purple-400" />
-                              <h4 className="text-sm font-extrabold text-white">
-                                AI Clinical & Fair-Tariff Audit Report
-                              </h4>
-                              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                {audit.auditedByEngine}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700">
-                                Clinical Trust Score:{' '}
-                                <strong
-                                  className={
-                                    audit.overallTrustScore >= 85
-                                      ? 'text-emerald-400'
-                                      : 'text-amber-400'
-                                  }
-                                >
-                                  {audit.overallTrustScore}/100
-                                </strong>
-                              </span>
-                            </div>
-                          </div>
-
-                          <p className="text-xs sm:text-sm text-slate-200 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                            <strong className="text-emerald-400">
-                              Plain-English Summary for Family Sponsor:{' '}
+                    <div className="p-6 space-y-5">
+                      {/* Patient's Personal Message to Sponsor */}
+                      {inv.patientMessageToSponsor && (
+                        <div className="rounded-xl bg-emerald-950/30 border border-emerald-500/30 p-3.5 text-xs text-emerald-100 flex items-start gap-3">
+                          <HeartHandshake className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="text-emerald-300 block mb-0.5">
+                              Message from {inv.dependentName} to {inv.sentToSponsorName}:
                             </strong>
-                            {audit.plainEnglishFamilySummary}
-                          </p>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                            <div className="text-xs text-slate-300">
-                              {audit.pricingBenchmarkSummary}
-                            </div>
-
-                            {audit.savingsNgn > 0 && !inv.appliedAiFairAdjustment && !isPaid && (
-                              <button
-                                onClick={() => handleApplyAiFairAdjustment(inv.id)}
-                                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
-                              >
-                                <Sparkles className="w-4 h-4" />
-                                <span>
-                                  Apply AI Verified Fair-Price Adjustment (Save{' '}
-                                  {formatDiasporaCurrency(audit.savingsUsd)})
-                                </span>
-                              </button>
-                            )}
-
-                            {inv.appliedAiFairAdjustment && (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl">
-                                <CheckCircle2 className="w-4 h-4" />
-                                AI Fair-Price Adjustment Applied (-
-                                {formatDiasporaCurrency(audit.savingsUsd)})
-                              </span>
-                            )}
+                            &ldquo;{inv.patientMessageToSponsor}&rdquo;
                           </div>
                         </div>
                       )}
 
-                      {/* Action Bar */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {!audit ? (
+                      {/* Full Itemized Table (No Hidden Prices) */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+                            100% Transparent Line-by-Line Bill Breakdown:
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            Rate: $1 USD = ₦{inv.fxRateNgnPerUsd.toLocaleString()} NGN (0% Hidden Markup)
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-xl border border-slate-800">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                                <th className="py-2.5 px-3 font-semibold">Item / Medication / Test</th>
+                                <th className="py-2.5 px-3 font-semibold">Category</th>
+                                <th className="py-2.5 px-3 font-semibold text-right">
+                                  Hospital Price (NGN)
+                                </th>
+                                <th className="py-2.5 px-3 font-semibold text-right">
+                                  In {selectedCurrency}
+                                </th>
+                                <th className="py-2.5 px-3 font-semibold">
+                                  AI Fair-Price & Clinical Verification
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/70">
+                              {inv.lineItems.map((item) => {
+                                const finding = audit?.lineFindings.find(
+                                  (f) => f.itemId === item.id
+                                );
+                                const itemUsd = item.totalNgn / inv.fxRateNgnPerUsd;
+                                return (
+                                  <tr key={item.id} className="hover:bg-slate-800/30">
+                                    <td className="py-3 px-3">
+                                      <div className="font-bold text-white">{item.name}</div>
+                                      <div className="text-[11px] text-slate-400">
+                                        {item.dosageOrSpec}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3 capitalize text-slate-300">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-[11px]">
+                                        {item.category === 'medication' && (
+                                          <Pill className="w-3 h-3 text-emerald-400" />
+                                        )}
+                                        {item.category === 'laboratory' && (
+                                          <FlaskConical className="w-3 h-3 text-blue-400" />
+                                        )}
+                                        {item.category === 'consultation' && (
+                                          <Stethoscope className="w-3 h-3 text-purple-400" />
+                                        )}
+                                        {item.category}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-right font-mono font-semibold text-slate-200">
+                                      ₦{item.totalNgn.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-3 text-right font-mono text-[#FFC439] font-bold">
+                                      {formatDiasporaCurrency(itemUsd)}
+                                    </td>
+                                    <td className="py-3 px-3">
+                                      {!finding ? (
+                                        <span className="text-slate-400">
+                                          Fair Benchmark: ≤ ₦
+                                          {(
+                                            item.benchmarkFairMaxUnitNgn * item.quantity
+                                          ).toLocaleString()}
+                                        </span>
+                                      ) : finding.flag === 'verified' ? (
+                                        <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          Verified Fair & Medically Appropriate
+                                        </span>
+                                      ) : (
+                                        <div className="space-y-0.5">
+                                          <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
+                                            <AlertTriangle className="w-3.5 h-3.5" />
+                                            {finding.flag === 'overpriced'
+                                              ? `Overpriced — Fair Price is ₦${finding.recommendedFairNgn.toLocaleString()}`
+                                              : 'Not Needed for This Diagnosis (Removed: ₦0)'}
+                                          </span>
+                                          <p className="text-[11px] text-amber-200/90">
+                                            {finding.clinicalRationale}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* AI Audit Explanation Box */}
+                      {audit && (
+                        <div className="rounded-2xl bg-purple-950/30 border border-purple-500/40 p-4 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-extrabold text-purple-300 flex items-center gap-1.5">
+                              <Sparkles className="w-4 h-4 text-purple-400" />
+                              AI Plain-English Explanation for Family Sponsor:
+                            </span>
+                            <span className="text-xs font-bold text-emerald-400">
+                              Trust Score: {audit.overallTrustScore}/100
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                            {audit.plainEnglishFamilySummary}
+                          </p>
+                          {audit.savingsNgn > 0 && !inv.appliedAiFairAdjustment && !isPaid && (
                             <button
-                              onClick={() => handleRunAiAudit(inv)}
-                              disabled={auditingInvoiceId === inv.id}
-                              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition disabled:opacity-50"
+                              onClick={() => handleApplyAiFairAdjustment(inv.id)}
+                              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
                             >
                               <Sparkles className="w-4 h-4" />
                               <span>
-                                {auditingInvoiceId === inv.id
-                                  ? 'Auditing ICD-10 & Prices...'
-                                  : '1. Run AI Clinical & Fair-Price Audit'}
+                                Apply AI Verified Fair Price (Save{' '}
+                                {formatDiasporaCurrency(audit.savingsUsd)} — Pay Only{' '}
+                                {formatDiasporaCurrency(
+                                  audit.verifiedFairTotalNgn / inv.fxRateNgnPerUsd
+                                )}
+                                )
                               </span>
                             </button>
-                          ) : (
-                            <button
-                              onClick={() => handleRunAiAudit(inv)}
-                              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>Re-Run AI Audit</span>
-                            </button>
                           )}
+                        </div>
+                      )}
+
+                      {/* Payment Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleRunAiAudit(inv)}
+                            disabled={auditingInvoiceId === inv.id}
+                            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow transition"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            <span>
+                              {auditingInvoiceId === inv.id
+                                ? 'Checking Prices & Diagnosis...'
+                                : audit
+                                ? 'Re-Verify Prices with AI'
+                                : '1. Verify Bill Prices & Diagnosis with AI'}
+                            </span>
+                          </button>
+
+                          <button
+                            onClick={() => setCurrentPage('5_sponsor_visit_records')}
+                            className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition"
+                          >
+                            <Stethoscope className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>See Doctor&apos;s Visit Record (Page 5)</span>
+                          </button>
                         </div>
 
                         {!isPaid ? (
@@ -1215,30 +1704,26 @@ export default function DocarionCareSponsorApp() {
                                   <Wallet className="w-4 h-4" />
                                   <span>
                                     Pay from {dependent.fullName.split(' ')[0]}&apos;s Care Wallet
-                                    (₦{dependent.healthLockedWalletNgn.toLocaleString()} avail.)
+                                    (₦{dependent.healthLockedWalletNgn.toLocaleString()})
                                   </span>
                                 </button>
                               )}
 
                             <button
                               onClick={() => openInvoicePayPalModal(inv)}
-                              className="px-5 py-2.5 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg transition"
+                              className="px-6 py-3 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-sm flex items-center gap-2 shadow-xl transition"
                             >
                               <span>
-                                Pay {formatDiasporaCurrency(inv.payableUsd)} with PayPal
+                                2. Pay {formatDiasporaCurrency(inv.payableUsd)} with PayPal
                               </span>
                               <ArrowRight className="w-4 h-4" />
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-3 text-xs text-emerald-400 font-semibold">
+                          <div className="flex items-center gap-2 text-xs text-emerald-400 font-bold">
                             <CheckCircle2 className="w-4 h-4" />
                             <span>
-                              Settled via{' '}
-                              {inv.fundingSource === 'health_locked_wallet'
-                                ? 'Docarion Health-Locked Care Wallet'
-                                : `PayPal (${inv.paypalOrderId})`}{' '}
-                              • Voucher: <strong className="font-mono">{inv.docarionVoucherCode}</strong>
+                              Paid & Settled! Care Voucher: {inv.docarionVoucherCode}
                             </span>
                           </div>
                         )}
@@ -1252,858 +1737,573 @@ export default function DocarionCareSponsorApp() {
         )}
 
         {/* =====================================================================
-            TAB 2: HEALTH-LOCKED CARE WALLET & PAYPAL CHRONIC AUTO-RELOAD
+            PAGE 4: FAMILY SPONSOR VIEW — FUND PATIENT'S CARE WALLET VIA PAYPAL
            ===================================================================== */}
-        {activeTab === 'care_wallet' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left 2 Columns: Dependents' Health-Locked Wallets & Guardrails */}
-            <div className="lg:col-span-2 space-y-5">
-              <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
+        {currentPage === '4_sponsor_wallet' && (
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-gradient-to-r from-[#003087]/80 via-slate-900 to-slate-900 border border-blue-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#FFC439]/20 text-[#FFC439] border border-[#FFC439]/30">
+                  💳 Page 4 • Family Member Abroad View (Fund Care Wallet via PayPal)
+                </span>
+                <h2 className="text-xl font-extrabold text-white">
+                  Fund {activeDependent.fullName}&apos;s Health-Locked Care Wallet
+                </h2>
+                <p className="text-xs sm:text-sm text-blue-100">
+                  Pre-fund her wallet in {selectedCurrency} using PayPal so she can walk into any
+                  Docarion hospital, clinic, or pharmacy and pick up her medications without delay.
+                </p>
+              </div>
+              <button
+                onClick={() => setCurrentPage('5_sponsor_visit_records')}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
+              >
+                <span>Next: View Patient Visit Records (Page 5) →</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left 7 Cols: Wallet Balance, Guardrails & Monthly Auto-Reload */}
+              <div className="lg:col-span-7 rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
                   <div>
-                    <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
-                      <Wallet className="w-5 h-5 text-[#FFC439]" />
-                      <span>Health-Locked Family Care Wallets</span>
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Funds added via PayPal are cryptographically locked to verified Docarion
-                      hospitals, pharmacies, and labs—eliminating cash diversion while ensuring
-                      zero delays when your family needs medication or urgent care.
+                    <span className="text-xs text-slate-400 uppercase font-bold">
+                      Patient Care Wallet Beneficiary
+                    </span>
+                    <h3 className="text-xl font-black text-white mt-0.5">
+                      {activeDependent.fullName}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {activeDependent.primaryFacilityName} • {activeDependent.city}
                     </p>
+                  </div>
+                  <div className="text-right bg-slate-950 border border-emerald-500/40 rounded-2xl px-5 py-3">
+                    <span className="text-xs text-slate-400 block">
+                      Available Health-Locked Balance
+                    </span>
+                    <span className="text-2xl font-black text-emerald-400">
+                      ₦{activeDependent.healthLockedWalletNgn.toLocaleString()} NGN
+                    </span>
+                    <span className="block text-xs text-[#FFC439] font-bold">
+                      ≈ {formatDiasporaCurrency(activeDependent.healthLockedWalletUsdEquivalent)}
+                    </span>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  {dependents.map((dep) => (
-                    <div
-                      key={dep.id}
-                      className="rounded-xl bg-slate-950/80 border border-slate-800 p-4 space-y-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-white">{dep.fullName}</h3>
-                            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
-                              {dep.relationshipToSponsor} • {dep.age} yrs
-                            </span>
-                            <span className="text-xs font-mono text-slate-400">
-                              {dep.docarionPatientId}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>
-                              {dep.city}, {dep.country} • Primary:{' '}
-                              <strong className="text-slate-200">{dep.primaryFacilityName}</strong>
-                            </span>
-                          </p>
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {dep.chronicConditions.map((cond) => (
-                              <span
-                                key={cond}
-                                className="text-[11px] px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 text-slate-300"
-                              >
-                                {cond}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                {/* Chronic Medications Covered by Wallet */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    Routine Medications & Care Covered by This Wallet:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {activeDependent.activeMedications.map((med) => (
+                      <span
+                        key={med}
+                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-300 font-semibold flex items-center gap-1.5"
+                      >
+                        <Pill className="w-3.5 h-3.5 text-emerald-400" />
+                        {med}
+                      </span>
+                    ))}
+                  </div>
+                </div>
 
-                        <div className="text-right bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5">
-                          <span className="text-[11px] text-slate-400 block">
-                            Health-Locked Balance
-                          </span>
-                          <span className="text-xl font-black text-emerald-400">
-                            ₦{dep.healthLockedWalletNgn.toLocaleString()} NGN
-                          </span>
-                          <span className="block text-xs text-[#FFC439] font-bold">
-                            ≈ {formatDiasporaCurrency(dep.healthLockedWalletUsdEquivalent)}
-                          </span>
-                        </div>
-                      </div>
+                {/* Category Guardrails */}
+                <div className="space-y-2 pt-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    Sponsor Spending Rules (Health-Locked Guarantee):
+                  </span>
+                  <p className="text-xs text-slate-400">
+                    Choose what {activeDependent.fullName} can pay for using this wallet. Cash
+                    withdrawals are permanently blocked so funds are 100% protected for healthcare.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {(
+                      [
+                        ['prescriptionsAndChronicMeds', '💊 Pharmacy Prescriptions & Refills'],
+                        ['consultationsAndTelehealth', '🩺 Doctor Consultations & Telehealth'],
+                        ['diagnosticLabsAndImaging', '🧪 Lab Tests, Ultrasound & ECG'],
+                        ['inpatientAndEmergencyAdmissions', '🏥 Hospital Admissions & Emergency'],
+                      ] as const
+                    ).map(([key, label]) => {
+                      const enabled = activeDependent.guardrails[key];
+                      return (
+                        <button
+                          key={key}
+                          onClick={() =>
+                            setDependents((prev) =>
+                              prev.map((d) =>
+                                d.id === activeDependent.id
+                                  ? {
+                                      ...d,
+                                      guardrails: {
+                                        ...d.guardrails,
+                                        [key]: !enabled,
+                                      },
+                                    }
+                                  : d
+                              )
+                            )
+                          }
+                          className={`p-3 rounded-xl text-left text-xs font-bold border transition flex items-center justify-between ${
+                            enabled
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-slate-950 border-slate-800 text-slate-500 line-through'
+                          }`}
+                        >
+                          <span>{label}</span>
+                          <span>{enabled ? '✅ Allowed' : 'Off'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-                      {/* Spending Guardrails */}
-                      <div className="pt-3 border-t border-slate-800/80">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-                          Sponsor Category Guardrails (Click to Toggle):
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {(
-                            [
-                              ['prescriptionsAndChronicMeds', '💊 Prescriptions & Chronic Meds'],
-                              ['consultationsAndTelehealth', '🩺 Consultations & Telehealth'],
-                              ['diagnosticLabsAndImaging', '🧪 Diagnostic Labs & Scans'],
-                              ['inpatientAndEmergencyAdmissions', '🏥 Inpatient & Emergency Care'],
-                            ] as const
-                          ).map(([key, label]) => {
-                            const enabled = dep.guardrails[key];
-                            return (
-                              <button
-                                key={key}
-                                onClick={() =>
-                                  setDependents((prev) =>
-                                    prev.map((d) =>
-                                      d.id === dep.id
-                                        ? {
-                                            ...d,
-                                            guardrails: {
-                                              ...d.guardrails,
-                                              [key]: !enabled,
-                                            },
-                                          }
-                                        : d
-                                    )
-                                  )
-                                }
-                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                                  enabled
-                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                                    : 'bg-slate-900 border-slate-800 text-slate-500 line-through'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            );
-                          })}
-                          <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-1">
-                            <Lock className="w-3 h-3" />
-                            Cash Withdrawal Blocked
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* PayPal Auto-Reload Subscription Bar */}
-                      <div className="rounded-xl bg-[#003087]/25 border border-blue-500/30 p-3 flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-xs">
-                          <span className="font-bold text-white flex items-center gap-1.5">
-                            <CreditCard className="w-3.5 h-3.5 text-[#FFC439]" />
-                            PayPal Chronic-Care Monthly Auto-Reload:
-                          </span>
-                          <p className="text-blue-200 mt-0.5">
-                            {dep.autoReloadPlan.active
-                              ? `Active (${dep.autoReloadPlan.subscriptionId}) • ${formatDiasporaCurrency(
-                                  dep.autoReloadPlan.amountUsd
-                                )}/month for ${dep.autoReloadPlan.purpose}`
-                              : `Not active — Recommended $45/mo for ${dep.activeMedications.join(', ')}`}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              setPaypalModal({
-                                isOpen: true,
-                                mode: 'wallet_topup',
-                                title: `Top Up ${dep.fullName}'s Health-Locked Care Wallet`,
-                                subtitle: `Instant USD → NGN deposit at ${dep.primaryFacilityName}`,
-                                referenceId: `WLT-${dep.docarionPatientId}`,
-                                dependentId: dep.id,
-                                dependentName: dep.fullName,
-                                facilityName: dep.primaryFacilityName,
-                                amountUsd: 50,
-                                amountNgn: 50 * DEFAULT_FX_NGN_PER_USD,
-                              })
-                            }
-                            className="px-3.5 py-2 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-extrabold text-xs transition"
-                          >
-                            + Fund {formatDiasporaCurrency(50)} via PayPal
-                          </button>
-
-                          {!dep.autoReloadPlan.active && (
-                            <button
-                              onClick={() =>
-                                setPaypalModal({
-                                  isOpen: true,
-                                  mode: 'auto_reload_subscription',
-                                  title: `Activate Monthly PayPal Auto-Reload (${dep.fullName})`,
-                                  subtitle:
-                                    'Recurring monthly chronic medication & lab reserve',
-                                  referenceId: `SUB-${dep.docarionPatientId}`,
-                                  dependentId: dep.id,
-                                  dependentName: dep.fullName,
-                                  facilityName: dep.primaryFacilityName,
-                                  amountUsd: 45,
-                                  amountNgn: 45 * DEFAULT_FX_NGN_PER_USD,
-                                })
-                              }
-                              className="px-3 py-2 rounded-xl bg-[#0070BA] hover:bg-[#005ea6] text-white font-bold text-xs transition"
-                            >
-                              Enable Auto-Reload
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                {/* Monthly PayPal Auto-Reload */}
+                <div className="rounded-2xl bg-[#003087]/30 border border-blue-500/30 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1 text-xs">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-[#FFC439]" />
+                      PayPal Monthly Chronic-Medication Auto-Reload:
+                    </span>
+                    <p className="text-blue-200">
+                      {activeDependent.autoReloadPlan.active
+                        ? `Active (${activeDependent.autoReloadPlan.subscriptionId}) — Automatically adds ${formatDiasporaCurrency(
+                            activeDependent.autoReloadPlan.amountUsd
+                          )} every month on ${activeDependent.autoReloadPlan.nextBillingDate}`
+                        : 'Set up automatic monthly funding so she never runs out of blood pressure or diabetes tablets.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setPaypalModal({
+                        isOpen: true,
+                        mode: 'auto_reload_subscription',
+                        title: `Monthly PayPal Auto-Reload (${activeDependent.fullName})`,
+                        subtitle: 'Recurring monthly chronic medication & checkup reserve',
+                        referenceId: `SUB-${activeDependent.docarionPatientId}`,
+                        dependentId: activeDependent.id,
+                        dependentName: activeDependent.fullName,
+                        facilityName: activeDependent.primaryFacilityName,
+                        amountUsd: 45,
+                        amountNgn: 45 * DEFAULT_FX_NGN_PER_USD,
+                      })
+                    }
+                    className="px-4 py-2 rounded-xl bg-[#0070BA] hover:bg-[#005ea6] text-white font-bold text-xs transition"
+                  >
+                    {activeDependent.autoReloadPlan.active
+                      ? 'Run Monthly Reload Now ($45)'
+                      : 'Activate $45/mo Auto-Reload'}
+                  </button>
                 </div>
               </div>
-            </div>
 
-            {/* Right Column: Custom PayPal Top-Up Box & Ledger */}
-            <div className="space-y-5">
-              <div className="rounded-2xl bg-gradient-to-b from-[#003087]/60 to-slate-900 border border-blue-500/40 p-5 space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-[#FFC439] text-[#003087] font-black flex items-center justify-center text-lg">
+              {/* Right 5 Cols: Top Up with PayPal Box */}
+              <div className="lg:col-span-5 rounded-2xl bg-gradient-to-b from-[#003087]/70 to-slate-900 border border-[#FFC439]/40 p-6 space-y-5">
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-2xl bg-[#FFC439] text-[#003087] font-black flex items-center justify-center text-xl shadow">
                     P
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-white">
-                      Instant PayPal Care Wallet Top-Up
+                    <h3 className="text-lg font-extrabold text-white">
+                      Add Funds with PayPal
                     </h3>
                     <p className="text-xs text-blue-200">
-                      Pre-fund medications, labs & consultations
+                      Instant credit to {activeDependent.fullName}&apos;s Docarion Care Wallet
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Select Family Member in Africa
-                    </label>
-                    <select
-                      value={walletTargetDepId}
-                      onChange={(e) => setWalletTargetDepId(e.target.value)}
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2.5 text-xs text-white font-semibold"
-                    >
-                      {dependents.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.fullName} ({d.relationshipToSponsor} — {d.city})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Select Amount (USD Equivalent)
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[25, 50, 100, 200].map((amt) => (
-                        <button
-                          key={amt}
-                          onClick={() => setWalletTopupAmountUsd(amt)}
-                          className={`py-2 rounded-xl text-xs font-extrabold border transition ${
-                            walletTopupAmountUsd === amt
-                              ? 'bg-[#FFC439] text-[#003087] border-[#FFC439]'
-                              : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-slate-500'
-                          }`}
-                        >
-                          ${amt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-3 text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">You Pay via PayPal:</span>
-                      <span className="font-bold text-[#FFC439]">
-                        {formatDiasporaCurrency(walletTopupAmountUsd)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Health-Locked Credit:</span>
-                      <span className="font-mono font-bold text-emerald-400">
-                        ₦{(walletTopupAmountUsd * DEFAULT_FX_NGN_PER_USD).toLocaleString()} NGN
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const dep =
-                        dependents.find((d) => d.id === walletTargetDepId) || dependents[0];
-                      setPaypalModal({
-                        isOpen: true,
-                        mode: 'wallet_topup',
-                        title: `Fund ${dep.fullName}'s Health-Locked Care Wallet`,
-                        subtitle: '100% locked to verified Docarion medical providers & pharmacies',
-                        referenceId: `TOPUP-${dep.docarionPatientId}`,
-                        dependentId: dep.id,
-                        dependentName: dep.fullName,
-                        facilityName: dep.primaryFacilityName,
-                        amountUsd: walletTopupAmountUsd,
-                        amountNgn: walletTopupAmountUsd * DEFAULT_FX_NGN_PER_USD,
-                      });
-                    }}
-                    className="w-full py-3 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-sm flex items-center justify-center gap-2 shadow-lg transition"
-                  >
-                    <span>Fund Wallet with PayPal</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Recent Wallet Ledger */}
-              <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-3">
-                <h3 className="text-sm font-bold text-white">
-                  Recent Health-Locked Wallet Activity
-                </h3>
-                <div className="space-y-2.5">
-                  {walletTxs.map((tx) => (
-                    <div
-                      key={tx.id}
-                      className="rounded-xl bg-slate-950 border border-slate-800/80 p-3 text-xs space-y-1"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-white">{tx.dependentName}</span>
-                        <span
-                          className={`font-mono font-bold ${
-                            tx.type === 'bill_settlement_debit'
-                              ? 'text-amber-400'
-                              : 'text-emerald-400'
-                          }`}
-                        >
-                          {tx.type === 'bill_settlement_debit' ? '-' : '+'}₦
-                          {tx.amountNgn.toLocaleString()} ($
-                          {tx.amountUsd.toFixed(2)})
-                        </span>
-                      </div>
-                      <p className="text-slate-400 text-[11px]">{tx.description}</p>
-                      <p className="text-[10px] font-mono text-slate-500">
-                        Ref: {tx.paypalReferenceId}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =====================================================================
-            TAB 3: AFRICAN PROVIDER & PATIENT GUARANTOR SIMULATOR (EMR SIDE)
-           ===================================================================== */}
-        {activeTab === 'facility_simulator' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left: Add a Diaspora Care Sponsor (Guarantor) to Patient Profile */}
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-4">
-              <div className="flex items-center gap-2.5">
-                <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-base font-extrabold text-white">
-                    Step 1: Link a Diaspora Care Sponsor (Guarantor)
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Patients in Africa add family members abroad so any bill at any Docarion
-                    hospital or pharmacy routes to them automatically.
-                  </p>
-                </div>
-              </div>
-
-              {sponsorAddedBanner && (
-                <div className="rounded-xl bg-emerald-500/15 border border-emerald-500/40 p-3 text-xs text-emerald-300 font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{sponsorAddedBanner}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleAddCareSponsor} className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Patient in Africa (Docarion EMR Profile)
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Choose Amount to Add (USD Equivalent):
                   </label>
-                  <select
-                    value={simDependentId}
-                    onChange={(e) => setSimDependentId(e.target.value)}
-                    className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2.5 text-white font-semibold"
-                  >
-                    {dependents.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.fullName} ({d.docarionPatientId} • {d.primaryFacilityName})
-                      </option>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {[25, 50, 100, 200].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setWalletTopupAmountUsd(amt)}
+                        className={`py-3 rounded-xl text-sm font-black border transition ${
+                          walletTopupAmountUsd === amt
+                            ? 'bg-[#FFC439] text-[#003087] border-[#FFC439] shadow-lg'
+                            : 'bg-slate-950 text-slate-200 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        ${amt}
+                      </button>
                     ))}
-                  </select>
-                </div>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-400 mb-1">
-                      Diaspora Sponsor Full Name
+                  <div className="pt-2">
+                    <label className="block text-xs text-slate-400 mb-1">
+                      Or Enter Custom Amount (USD):
                     </label>
                     <input
-                      type="text"
-                      value={newSponsorName}
-                      onChange={(e) => setNewSponsorName(e.target.value)}
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">
-                      Relationship to Patient
-                    </label>
-                    <input
-                      type="text"
-                      value={newSponsorRelation}
-                      onChange={(e) => setNewSponsorRelation(e.target.value)}
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-2">
-                    <label className="block text-slate-400 mb-1">
-                      Sponsor Email / PayPal Account
-                    </label>
-                    <input
-                      type="email"
-                      value={newSponsorEmail}
-                      onChange={(e) => setNewSponsorEmail(e.target.value)}
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Preferred Currency</label>
-                    <select
-                      value={newSponsorCurrency}
+                      type="number"
+                      min={5}
+                      value={walletTopupAmountUsd}
                       onChange={(e) =>
-                        setNewSponsorCurrency(e.target.value as DiasporaCurrency)
+                        setWalletTopupAmountUsd(Math.max(1, Number(e.target.value)))
                       }
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white font-bold"
-                    >
-                      <option value="USD">USD ($)</option>
-                      <option value="GBP">GBP (£)</option>
-                      <option value="EUR">EUR (€)</option>
-                      <option value="CAD">CAD (CA$)</option>
-                    </select>
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm font-mono text-white font-bold"
+                    />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1">
-                    Diaspora City & Country
-                  </label>
-                  <input
-                    type="text"
-                    value={newSponsorLocation}
-                    onChange={(e) => setNewSponsorLocation(e.target.value)}
-                    className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-white"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-2 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Verified Diaspora Care Sponsor to Patient Chart</span>
-                </button>
-              </form>
-
-              {/* Active Sponsors for Selected Patient */}
-              <div className="pt-3 border-t border-slate-800 space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Linked Care Sponsors for{' '}
-                  {dependents.find((d) => d.id === simDependentId)?.fullName}:
-                </span>
-                {dependents
-                  .find((d) => d.id === simDependentId)
-                  ?.sponsors.map((sp) => (
-                    <div
-                      key={sp.id}
-                      className="rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <span className="font-bold text-white">{sp.fullName}</span>{' '}
-                        <span className="text-emerald-400">({sp.relationship})</span>
-                        <p className="text-[11px] text-slate-400">
-                          {sp.diasporaLocation} • PayPal: {sp.paypalPayerEmail}
-                        </p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 font-bold">
-                        {sp.preferredCurrency}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Right: African Hospital / Pharmacy Live Bill Dispatcher */}
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-4">
-              <div className="flex items-center gap-2.5">
-                <div className="h-10 w-10 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-base font-extrabold text-white">
-                    Step 2: African Hospital / Pharmacy Bill Dispatcher
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Simulate an African clinic, lab, or pharmacy generating a bill on Docarion and
-                    routing it straight to the Diaspora Care Sponsor.
-                  </p>
-                </div>
-              </div>
-
-              {dispatchedBillBanner && (
-                <div className="rounded-xl bg-purple-500/20 border border-purple-500/40 p-3 text-xs text-purple-200 font-semibold flex items-center justify-between gap-2">
-                  <span>{dispatchedBillBanner}</span>
-                  <button
-                    onClick={() => setActiveTab('sponsor_hub')}
-                    className="px-2.5 py-1 rounded-lg bg-purple-500 text-white font-bold shrink-0"
-                  >
-                    Open Sponsor Hub →
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1.5">
-                    Select Clinical Encounter Scenario to Dispatch
-                  </label>
-                  <div className="space-y-2">
-                    <label
-                      className={`block rounded-xl border p-3 cursor-pointer transition ${
-                        simScenarioPreset === 'diabetes_overbilled'
-                          ? 'bg-purple-950/30 border-purple-500'
-                          : 'bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="preset"
-                          checked={simScenarioPreset === 'diabetes_overbilled'}
-                          onChange={() => setSimScenarioPreset('diabetes_overbilled')}
-                        />
-                        <span className="font-bold text-white">
-                          Scenario A: Type 2 Diabetes Review + Overbilled Lab & Unindicated IV Steroid
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1 pl-5">
-                        Billed at ₦92,000 ($56.79 USD) — includes a 2.2x overpriced HbA1c test and
-                        an unindicated IV Methylprednisolone vial so you can watch the AI Auditor
-                        catch and strip them live!
-                      </p>
-                    </label>
-
-                    <label
-                      className={`block rounded-xl border p-3 cursor-pointer transition ${
-                        simScenarioPreset === 'malaria_pharmacy'
-                          ? 'bg-purple-950/30 border-purple-500'
-                          : 'bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="preset"
-                          checked={simScenarioPreset === 'malaria_pharmacy'}
-                          onChange={() => setSimScenarioPreset('malaria_pharmacy')}
-                        />
-                        <span className="font-bold text-white">
-                          Scenario B: Verified 60-Day Hypertension Pharmacy Refill + Home Delivery
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1 pl-5">
-                        Billed at ₦34,000 ($20.99 USD) — 100% compliant e-prescription from
-                        Docarion Central Pharmacy with locked dispensation gate.
-                      </p>
-                    </label>
-
-                    <label
-                      className={`block rounded-xl border p-3 cursor-pointer transition ${
-                        simScenarioPreset === 'emergency_asthma'
-                          ? 'bg-purple-950/30 border-purple-500'
-                          : 'bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="preset"
-                          checked={simScenarioPreset === 'emergency_asthma'}
-                          onChange={() => setSimScenarioPreset('emergency_asthma')}
-                        />
-                        <span className="font-bold text-white">
-                          Scenario C: Emergency Triage (ESI-1) Acute Bronchospasm Stabilization
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1 pl-5">
-                        Demonstrates Docarion&apos;s hard invariant: Emergency care bypasses payment
-                        gates immediately so the patient is treated first, while routing the
-                        post-stabilization bill (₦45,000 / $27.78 USD) to the Diaspora Guarantor.
-                      </p>
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleDispatchSimulatedBill}
-                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>
-                    Dispatch Live Provider Bill to Diaspora Care Sponsor Hub
-                  </span>
-                </button>
-              </div>
-
-              {/* Live Facility Gate Status Monitor */}
-              <div className="pt-3 border-t border-slate-800 space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Live African Facility Workflow Gate Monitor:
-                </span>
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {invoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="rounded-xl bg-slate-950 border border-slate-800 p-3 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <div>
-                        <span className="font-mono text-slate-400">{inv.invoiceNumber}</span>{' '}
-                        <strong className="text-white">{inv.dependentName}</strong>
-                        <p className="text-[11px] text-slate-400">{inv.facilityName}</p>
-                      </div>
-                      {inv.status === 'paid_settled' ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold text-[11px]">
-                          ✅ UNLOCKED ({inv.docarionVoucherCode})
-                        </span>
-                      ) : inv.isEmergencyTriage ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold text-[11px]">
-                          ⚡ EMERGENCY BYPASSED
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[11px]">
-                          🔒 GATE LOCKED
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =====================================================================
-            TAB 4: CARESPONSOR AI COPILOT & PAYPAL ORDERS V2 TELEMETRY INSPECTOR
-           ===================================================================== */}
-        {activeTab === 'ai_copilot' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 7 Columns: Conversational AI CareSponsor Copilot */}
-            <div className="lg:col-span-7 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col h-[620px] overflow-hidden">
-              <div className="px-5 py-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-                    <Bot className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-extrabold text-white">
-                      Docarion CareSponsor AI Copilot
-                    </h2>
-                    <p className="text-[11px] text-slate-400">
-                      Audits African medical bills, explains diagnoses & prepares PayPal Orders inline
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                  Agentic PayPal + Clinical AI
-                </span>
-              </div>
-
-              {/* Quick Prompt Chips */}
-              <div className="px-4 py-2.5 bg-slate-950/50 border-b border-slate-800/80 flex items-center gap-2 overflow-x-auto">
-                <button
-                  onClick={() =>
-                    handleSendCopilotMessage(
-                      "Audit Mama Ngozi's latest hospital bill and check for overbilling"
-                    )
-                  }
-                  className="px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-emerald-300 shrink-0 transition"
-                >
-                  🔍 Audit Mama Ngozi&apos;s Bill
-                </button>
-                <button
-                  onClick={() =>
-                    handleSendCopilotMessage(
-                      'How much should I add to her Care Wallet for her monthly hypertension and diabetes refills?'
-                    )
-                  }
-                  className="px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-blue-300 shrink-0 transition"
-                >
-                  💊 Recommend Chronic Meds Budget
-                </button>
-                <button
-                  onClick={() =>
-                    handleSendCopilotMessage(
-                      'Summarize all pending bills across my Family Care Circle'
-                    )
-                  }
-                  className="px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-amber-300 shrink-0 transition"
-                >
-                  📊 Care Circle Summary
-                </button>
-              </div>
-
-              {/* Messages Feed */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-4">
-                {chatMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${
-                      msg.sender === 'user' ? 'items-end' : 'items-start'
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed whitespace-pre-line ${
-                        msg.sender === 'user'
-                          ? 'bg-emerald-600 text-white font-medium'
-                          : 'bg-slate-950 border border-slate-800 text-slate-200'
-                      }`}
-                    >
-                      {msg.text}
-
-                      {msg.actionCard && (
-                        <div className="mt-3 rounded-xl bg-slate-900 border border-[#FFC439]/40 p-3.5 space-y-2.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                              {msg.actionCard.badgeText}
-                            </span>
-                            <span className="text-sm font-black text-[#FFC439]">
-                              {formatDiasporaCurrency(msg.actionCard.amountUsd)}
-                            </span>
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-white text-xs">
-                              {msg.actionCard.title}
-                            </h4>
-                            <p className="text-[11px] text-slate-400">
-                              {msg.actionCard.subtitle}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (
-                                msg.actionCard?.type === 'pay_invoice_paypal' &&
-                                msg.actionCard.invoiceId
-                              ) {
-                                const targetInv =
-                                  invoices.find(
-                                    (i) => i.id === msg.actionCard?.invoiceId
-                                  ) || invoices[0];
-                                handleRunAiAudit(targetInv);
-                                setPaypalModal({
-                                  isOpen: true,
-                                  mode: 'invoice_settlement',
-                                  title: targetInv.diagnosisTitle,
-                                  subtitle: `${targetInv.invoiceNumber} • AI Verified Fair Settlement`,
-                                  referenceId: targetInv.invoiceNumber,
-                                  dependentId: targetInv.dependentId,
-                                  dependentName: targetInv.dependentName,
-                                  facilityName: targetInv.facilityName,
-                                  invoiceId: targetInv.id,
-                                  amountUsd: msg.actionCard.amountUsd,
-                                  amountNgn: msg.actionCard.amountNgn,
-                                  savingsUsd: msg.actionCard.savingsUsd,
-                                });
-                              } else {
-                                const dep =
-                                  dependents.find(
-                                    (d) => d.id === msg.actionCard?.dependentId
-                                  ) || dependents[0];
-                                setPaypalModal({
-                                  isOpen: true,
-                                  mode: 'wallet_topup',
-                                  title: `Fund ${dep.fullName}'s Health-Locked Care Wallet`,
-                                  subtitle: 'AI Recommended Chronic Care Reserve',
-                                  referenceId: `AI-WLT-${dep.docarionPatientId}`,
-                                  dependentId: dep.id,
-                                  dependentName: dep.fullName,
-                                  facilityName: dep.primaryFacilityName,
-                                  amountUsd: msg.actionCard?.amountUsd || 50,
-                                  amountNgn: msg.actionCard?.amountNgn || 81000,
-                                });
-                              }
-                            }}
-                            className="w-full py-2 px-3 rounded-lg bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-extrabold text-xs flex items-center justify-center gap-1.5 transition"
-                          >
-                            <span>
-                              Execute PayPal Checkout (
-                              {formatDiasporaCurrency(msg.actionCard.amountUsd)})
-                            </span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-500 mt-1 px-1">
-                      {msg.timestamp}
+                {/* Transparent Breakdown */}
+                <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-4 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">You Pay via PayPal:</span>
+                    <span className="font-bold text-[#FFC439] text-sm">
+                      {formatDiasporaCurrency(walletTopupAmountUsd)}
                     </span>
                   </div>
-                ))}
-              </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Exchange Rate:</span>
+                    <span className="font-mono text-slate-300">
+                      $1.00 USD = ₦{DEFAULT_FX_NGN_PER_USD.toLocaleString()} NGN
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Hidden Fees / Markup:</span>
+                    <span className="font-bold text-emerald-400">$0.00 (0%)</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-slate-800">
+                    <span className="text-white font-bold">
+                      Credited to {activeDependent.fullName}&apos;s Wallet:
+                    </span>
+                    <span className="font-mono font-black text-emerald-400 text-sm">
+                      +₦{(walletTopupAmountUsd * DEFAULT_FX_NGN_PER_USD).toLocaleString()} NGN
+                    </span>
+                  </div>
+                </div>
 
-              {/* Input Bar */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendCopilotMessage();
-                }}
-                className="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask CareSponsor AI to audit a bill, explain a diagnosis, or prepare a PayPal order..."
-                  className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                />
                 <button
-                  type="submit"
-                  disabled={chatLoading}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition"
+                  onClick={() =>
+                    setPaypalModal({
+                      isOpen: true,
+                      mode: 'wallet_topup',
+                      title: `Top Up ${activeDependent.fullName}'s Care Wallet`,
+                      subtitle: `100% Health-Locked at ${activeDependent.primaryFacilityName}`,
+                      referenceId: `TOPUP-${activeDependent.docarionPatientId}-${Date.now()
+                        .toString()
+                        .slice(-4)}`,
+                      dependentId: activeDependent.id,
+                      dependentName: activeDependent.fullName,
+                      facilityName: activeDependent.primaryFacilityName,
+                      amountUsd: walletTopupAmountUsd,
+                      amountNgn: walletTopupAmountUsd * DEFAULT_FX_NGN_PER_USD,
+                    })
+                  }
+                  className="w-full py-3.5 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-black text-sm flex items-center justify-center gap-2 shadow-xl transition"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Ask AI</span>
+                  <span>
+                    Fund {formatDiasporaCurrency(walletTopupAmountUsd)} with PayPal Now
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
-              </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================================
+            PAGE 5: FAMILY SPONSOR VIEW — PATIENT VISIT RECORDS, LABS & RX
+           ===================================================================== */}
+        {currentPage === '5_sponsor_visit_records' && (
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 border border-emerald-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  🩺 Page 5 • Family Member Abroad View (Visit Records, Vitals, Labs & Prescriptions)
+                </span>
+                <h2 className="text-xl font-extrabold text-white">
+                  Clinical Visit Records & Prescriptions for Your Family
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300">
+                  See exactly when your family member visited the hospital, which doctor treated
+                  them, their vital signs, lab results, and prescribed medications.
+                </p>
+              </div>
+              <button
+                onClick={() => setCurrentPage('6_sponsor_transactions')}
+                className="px-4 py-2.5 rounded-xl bg-[#FFC439] hover:bg-[#f4b829] text-[#003087] font-extrabold text-xs flex items-center gap-1.5 shadow-lg transition"
+              >
+                <span>Next: View Transactions & Receipts (Page 6) →</span>
+              </button>
             </div>
 
-            {/* Right 5 Columns: Live PayPal Orders v2 & AI Telemetry Inspector */}
-            <div className="lg:col-span-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col h-[620px] overflow-hidden">
-              <div className="px-5 py-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-extrabold text-white">
-                    PayPal Orders v2 & AI API Telemetry
-                  </h3>
+            <div className="space-y-5">
+              {visitRecords.map((vis) => (
+                <div
+                  key={vis.id}
+                  className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-lg"
+                >
+                  {/* Visit Top Bar */}
+                  <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs px-2.5 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
+                          {vis.visitNumber}
+                        </span>
+                        <span className="text-xs text-slate-300 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                          {vis.visitDate}
+                        </span>
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-blue-500/15 text-blue-300">
+                          ICD-10: {vis.icd10Code}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-extrabold text-white mt-1">
+                        {vis.dependentName} — {vis.diagnosisTitle}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Facility: <strong className="text-white">{vis.facilityName}</strong> (
+                        {vis.facilityCity}) • Department: {vis.department} • Attending:{' '}
+                        <strong className="text-slate-200">{vis.attendingDoctor}</strong>
+                      </p>
+                    </div>
+
+                    {vis.linkedInvoiceNumber && (
+                      <button
+                        onClick={() => setCurrentPage('3_sponsor_bills')}
+                        className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-[#FFC439] flex items-center gap-1.5"
+                      >
+                        <Receipt className="w-3.5 h-3.5" />
+                        <span>Linked Bill: {vis.linkedInvoiceNumber}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="p-6 space-y-5">
+                    {/* Vitals Strip */}
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                        Recorded Patient Vital Signs:
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                          <span className="text-[11px] text-slate-400 block">Blood Pressure</span>
+                          <span className="text-sm font-extrabold text-white">
+                            {vis.vitals.bloodPressure}
+                          </span>
+                        </div>
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                          <span className="text-[11px] text-slate-400 block">Heart Rate</span>
+                          <span className="text-sm font-extrabold text-emerald-400">
+                            {vis.vitals.heartRate}
+                          </span>
+                        </div>
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                          <span className="text-[11px] text-slate-400 block">Temperature</span>
+                          <span className="text-sm font-extrabold text-amber-400">
+                            {vis.vitals.temperature}
+                          </span>
+                        </div>
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                          <span className="text-[11px] text-slate-400 block">Blood Glucose</span>
+                          <span className="text-sm font-extrabold text-blue-400">
+                            {vis.vitals.bloodGlucose}
+                          </span>
+                        </div>
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                          <span className="text-[11px] text-slate-400 block">Weight</span>
+                          <span className="text-sm font-extrabold text-white">
+                            {vis.vitals.weight}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Plain-English Clinical Summary for the Family */}
+                    <div className="rounded-xl bg-emerald-950/25 border border-emerald-500/30 p-4 text-xs sm:text-sm text-slate-200 leading-relaxed">
+                      <strong className="text-emerald-400 block mb-1 flex items-center gap-1.5">
+                        <Activity className="w-4 h-4" />
+                        Plain-English Doctor&apos;s Update for Family Sponsor:
+                      </strong>
+                      {vis.clinicalSummaryPlainEnglish}
+                    </div>
+
+                    {/* Two-Column Prescriptions & Lab Results */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Prescriptions Issued */}
+                      <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 space-y-2.5">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                          <Pill className="w-4 h-4" />
+                          Prescribed Medications ({vis.prescriptionsIssued.length})
+                        </span>
+                        <div className="space-y-2">
+                          {vis.prescriptionsIssued.map((rx, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-lg bg-slate-900 border border-slate-800 p-3 text-xs space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <strong className="text-white">{rx.medicationName}</strong>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    rx.dispenseStatus.startsWith('Dispensed')
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : 'bg-amber-500/20 text-amber-300'
+                                  }`}
+                                >
+                                  {rx.dispenseStatus}
+                                </span>
+                              </div>
+                              <p className="text-slate-400">
+                                Dosage: {rx.dosageInstruction} • Duration: {rx.duration}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Lab Results */}
+                      <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 space-y-2.5">
+                        <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                          <FlaskConical className="w-4 h-4" />
+                          Laboratory & Diagnostic Results ({vis.labResultsSummary.length})
+                        </span>
+                        <div className="space-y-2">
+                          {vis.labResultsSummary.map((lab, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-lg bg-slate-900 border border-slate-800 p-3 text-xs space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <strong className="text-white">{lab.testName}</strong>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    lab.status === 'Normal'
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : 'bg-blue-500/20 text-blue-300'
+                                  }`}
+                                >
+                                  {lab.status}
+                                </span>
+                              </div>
+                              <p className="text-slate-300">{lab.resultValue}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-[11px] font-mono text-slate-400">
-                  {telemetry.length} events
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================================
+            PAGE 6: FAMILY SPONSOR VIEW — FULL TRANSACTIONS & RECEIPTS LEDGER
+           ===================================================================== */}
+        {currentPage === '6_sponsor_transactions' && (
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950/60 to-slate-900 border border-blue-500/40 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  📜 Page 6 • Family Member Abroad View (Transactions, Receipts & PayPal API Log)
+                </span>
+                <h2 className="text-xl font-extrabold text-white">
+                  Complete PayPal & Care Wallet Transaction History
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300">
+                  Every dollar, pound, or euro you send via PayPal is tracked down to the exact
+                  Nigerian Naira (₦ NGN) settled at the hospital or pharmacy.
+                </p>
+              </div>
+              <button
+                onClick={() => setCurrentPage('1_patient_dashboard')}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                ← Return to Page 1 (Patient Dashboard)
+              </button>
+            </div>
+
+            {/* Full Transactions Table */}
+            <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+              <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-extrabold text-white">
+                  Verified Healthcare Settlement & Wallet Ledger ({walletTxs.length} Transactions)
+                </h3>
+                <span className="text-xs text-emerald-400 font-semibold">
+                  100% Audit-Verified • 0% Cash Diversion
                 </span>
               </div>
 
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 font-mono text-xs">
-                {telemetry.map((ev) => (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-950/70 text-slate-400 border-b border-slate-800">
+                      <th className="py-3 px-4 font-semibold">Date & Time</th>
+                      <th className="py-3 px-4 font-semibold">Patient</th>
+                      <th className="py-3 px-4 font-semibold">Transaction Type & Description</th>
+                      <th className="py-3 px-4 font-semibold">Hospital / Wallet Recipient</th>
+                      <th className="py-3 px-4 font-semibold">PayPal / Voucher Ref</th>
+                      <th className="py-3 px-4 font-semibold text-right">Sponsor Paid</th>
+                      <th className="py-3 px-4 font-semibold text-right">Local NGN Settled</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80">
+                    {walletTxs.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-slate-800/30">
+                        <td className="py-3.5 px-4 text-slate-400 whitespace-nowrap">
+                          {new Date(tx.createdAt).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-white">{tx.dependentName}</td>
+                        <td className="py-3.5 px-4 text-slate-200">{tx.description}</td>
+                        <td className="py-3.5 px-4 text-slate-300">{tx.facilityOrRecipient}</td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-400">
+                          {tx.paypalReferenceId}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-[#FFC439]">
+                          {formatDiasporaCurrency(tx.amountUsd)}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-white">
+                          ₦{tx.amountNgn.toLocaleString()} NGN
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Live PayPal Orders v2 JSON Telemetry Log */}
+            <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-extrabold text-white">
+                  PayPal Orders v2 & AI Audit API Telemetry Log
+                </h3>
+                <span className="text-xs font-mono text-slate-400">
+                  {telemetry.length} API calls recorded
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {telemetry.slice(0, 6).map((ev) => (
                   <div
                     key={ev.id}
-                    className="rounded-xl bg-slate-950 border border-slate-800 p-3 space-y-2"
+                    className="rounded-xl bg-slate-950 border border-slate-800 p-3 text-xs space-y-1.5"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold text-[11px]">
-                        {ev.endpoint}
-                      </span>
-                      <span className="text-emerald-400 font-bold text-[11px]">
-                        HTTP {ev.status}
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <code className="text-blue-300 font-bold">{ev.endpoint}</code>
+                      <span className="text-emerald-400 font-mono">HTTP {ev.status}</span>
                     </div>
-                    <p className="text-slate-300 font-sans text-xs">{ev.summary}</p>
+                    <p className="text-slate-300">{ev.summary}</p>
                     <details className="text-[11px] text-slate-400">
                       <summary className="cursor-pointer hover:text-white">
-                        Inspect JSON Request & Response Payload
+                        View JSON Payload
                       </summary>
-                      <pre className="mt-2 p-2 rounded bg-black/60 overflow-x-auto text-[10px] text-emerald-300">
+                      <pre className="mt-2 p-2 rounded bg-black/70 overflow-x-auto text-[10px] text-emerald-300">
                         {JSON.stringify(
-                          {
-                            request: ev.requestPayload,
-                            response: ev.responsePayload,
-                          },
+                          { request: ev.requestPayload, response: ev.responsePayload },
                           null,
                           2
                         )}
@@ -2123,12 +2323,12 @@ export default function DocarionCareSponsorApp() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>
-              <strong>Docarion CareSponsor AI</strong> • Built with PayPal Orders v2 SDK,
-              PayPal Subscriptions & Clinical AI Tariff Auditor
+              <strong>Docarion CareSponsor</strong> • Built with PayPal Orders v2 SDK,
+              Health-Locked Care Wallets & Clinical AI Price Transparency
             </span>
           </div>
           <div>
-            <span>Zero-Cash-Diversion Diaspora Healthcare Guarantee • MIT Licensed</span>
+            <span>100% Itemized Hospital & Pharmacy Pricing • Zero Hidden Fees</span>
           </div>
         </div>
       </footer>

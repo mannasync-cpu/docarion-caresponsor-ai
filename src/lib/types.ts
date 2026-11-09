@@ -19,7 +19,7 @@ export interface SpendingGuardrails {
   prescriptionsAndChronicMeds: boolean;
   diagnosticLabsAndImaging: boolean;
   inpatientAndEmergencyAdmissions: boolean;
-  blockCashWithdrawal: true; // Always true: health-locked funds cannot be cashed out
+  blockCashWithdrawal: true;
 }
 
 export interface AutoReloadSubscription {
@@ -33,14 +33,58 @@ export interface AutoReloadSubscription {
 
 export interface CareSponsor {
   id: string;
+  inviteToken: string;
   fullName: string;
   email: string;
+  phoneOrWhatsapp?: string;
   relationship: string;
   diasporaLocation: string;
   preferredCurrency: DiasporaCurrency;
   paypalPayerEmail: string;
+  invitationStatus: 'pending_acceptance' | 'accepted_active';
+  permissions: {
+    viewVisitRecordsAndPrescriptions: boolean;
+    fundCareWallet: boolean;
+    autoReceiveBills: boolean;
+  };
   addedAt: string;
+  acceptedAt?: string;
   isPrimaryGuarantor: boolean;
+}
+
+export interface PatientVisitRecord {
+  id: string;
+  visitNumber: string;
+  dependentId: string;
+  dependentName: string;
+  visitDate: string;
+  facilityName: string;
+  facilityCity: string;
+  department: string;
+  attendingDoctor: string;
+  chiefComplaint: string;
+  diagnosisTitle: string;
+  icd10Code: string;
+  vitals: {
+    bloodPressure: string;
+    heartRate: string;
+    temperature: string;
+    bloodGlucose: string;
+    weight: string;
+  };
+  clinicalSummaryPlainEnglish: string;
+  prescriptionsIssued: {
+    medicationName: string;
+    dosageInstruction: string;
+    duration: string;
+    dispenseStatus: 'Dispensed (Paid via Sponsor)' | 'Ready at Pharmacy (Awaiting Sponsor Payment)';
+  }[];
+  labResultsSummary: {
+    testName: string;
+    resultValue: string;
+    status: 'Normal' | 'Positive — Treated' | 'Monitoring';
+  }[];
+  linkedInvoiceNumber?: string;
 }
 
 export interface CareDependent {
@@ -90,7 +134,7 @@ export interface AIAuditLineFinding {
 }
 
 export interface AIAuditReport {
-  overallTrustScore: number; // 0 to 100
+  overallTrustScore: number;
   verdict: 'verified_fair' | 'price_adjustment_recommended' | 'clinical_review_flagged';
   plainEnglishFamilySummary: string;
   clinicalAppropriatenessAnalysis: string;
@@ -120,6 +164,9 @@ export interface MedicalBillInvoice {
   workflowGate: WorkflowGateType;
   gateStatus: 'locked_awaiting_sponsor' | 'unlocked_paid' | 'emergency_bypassed';
   isEmergencyTriage?: boolean;
+  sentToSponsor: boolean;
+  sentToSponsorName?: string;
+  patientMessageToSponsor?: string;
   lineItems: BillLineItem[];
   originalTotalNgn: number;
   activePayableNgn: number;
@@ -141,10 +188,11 @@ export interface WalletTransaction {
   id: string;
   dependentId: string;
   dependentName: string;
-  type: 'paypal_topup' | 'paypal_auto_reload' | 'bill_settlement_debit';
+  type: 'paypal_topup' | 'paypal_auto_reload' | 'bill_settlement_debit' | 'paypal_direct_bill';
   amountUsd: number;
   amountNgn: number;
   paypalReferenceId: string;
+  facilityOrRecipient: string;
   description: string;
   createdAt: string;
 }
