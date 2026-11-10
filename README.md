@@ -7,7 +7,9 @@
 [![PayPal Integration](https://img.shields.io/badge/PayPal-Agentic_Orders_v2_%2B_Staged_Escrow-003087.svg)](https://developer.paypal.com)
 [![AI Engine](https://img.shields.io/badge/AI-Gemini_2.5_Flash_%2B_ICD10_Clinical_Auditor-purple.svg)](#architecture)
 
-> 🌐 **Live Production Experience (No Login Required for Judges):** **[https://docarion.com/care-sponsor](https://docarion.com/care-sponsor)** *(Integrated directly into the [Docarion Platform](https://docarion.com))*
+> 🌐 **Live Production Experience (No Login Required for Judges):** **[https://docarion.com/care-sponsor](https://docarion.com/care-sponsor)** *(Integrated directly into the [Docarion Platform](https://docarion.com))*  
+> 🎬 **Video Walkthrough (`02:58`, 1080p HD):** **[https://youtu.be/C3Hqo7pc7ac](https://youtu.be/C3Hqo7pc7ac)**  
+> 🏆 **Devpost Submission:** **[https://devpost.com/software/docarion-caresponsor-ai-agentic-paypal-care-guarantor](https://devpost.com/software/docarion-caresponsor-ai-agentic-paypal-care-guarantor)**
 
 ---
 
